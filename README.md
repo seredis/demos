@@ -58,6 +58,8 @@ project references the current release.
 dotnet run
 ```
 
+Typical output is shown in [output.md](output.md).
+
 By default the retry policy allows 5 attempts per operation, which is enough to bridge the failover
 window, so no error reaches the traffic loop. To see what a surfaced fault looks like, lower it:
 
