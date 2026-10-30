@@ -39,8 +39,8 @@ static class Ui
             new Layout("header").Size(header),
             new Layout("strip").Size(StripRows),
             new Layout("middle").SplitColumns(
+                new Layout("west"), // geography: west on the left, east on the right
                 new Layout("east"),
-                new Layout("west"),
                 new Layout("data")),
             new Layout("log").Size(log),
             new Layout("footer").Size(FooterRows));
@@ -96,7 +96,7 @@ static class Ui
             new Markup(markers.ToString()),
             new Markup($"[grey]{s.Operations} ops   {s.Retries} retried (r)   {s.Errors} errors (!)   newest on the right[/]"));
         return new Panel(body)
-            .Header($" each cell = one operation   {Styled(Region.East, EastGlyph)} east   {Styled(Region.West, WestGlyph)} west   {UnknownGlyph} unknown ")
+            .Header($" each cell = one operation   {Styled(Region.West, WestGlyph)} west   {Styled(Region.East, EastGlyph)} east   {UnknownGlyph} unknown ")
             .Border(BoxBorder.Rounded)
             .Expand();
     }
@@ -123,10 +123,10 @@ static class Ui
     {
         var table = new Table().Border(TableBorder.Simple).Expand();
         table.AddColumn("[grey]key[/]");
-        table.AddColumn(new TableColumn(Styled(Region.East, $"{EastGlyph} east")).RightAligned());
         table.AddColumn(new TableColumn(Styled(Region.West, $"{WestGlyph} west")).RightAligned());
-        table.AddRow("tick", Value(s.East.Tick), Value(s.West.Tick));
-        table.AddRow("hits", Value(s.East.Hits), Value(s.West.Hits));
+        table.AddColumn(new TableColumn(Styled(Region.East, $"{EastGlyph} east")).RightAligned());
+        table.AddRow("tick", Value(s.West.Tick), Value(s.East.Tick));
+        table.AddRow("hits", Value(s.West.Hits), Value(s.East.Hits));
 
         var note = new Markup("[grey]read directly from each server, not via the group.\n" +
                               "the two servers do not replicate: the standby's values\n" +

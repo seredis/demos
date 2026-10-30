@@ -111,7 +111,7 @@ What is on screen:
 
 - **Banner**: the active member's name, in its colour.
 - **Heartbeat strip**: one cell per operation, newest on the right. The glyph and colour give the
-  region that answered (`█` blue east, `░` orange west). A second row marks retried operations
+  region that answered (`░` orange west, `█` blue east). A second row marks retried operations
   (`r`, inferred from latency: there is no per-attempt callback) and errors (`!`).
 - **Member cards**: endpoint, weight, active/standby, connected, healthy, and whether the demo has
   stopped its container.
@@ -123,7 +123,7 @@ Keys:
 
 | Key | Action |
 |-----|--------|
-| `E` / `W` | stop or start that region's container (`docker compose stop`/`start`) |
+| `W` / `E` | stop or start that region's container (`docker compose stop`/`start`) |
 | `F` | pin a manual failover to the other member (`TryFailoverTo`) |
 | `R` | clear the manual failover; weight-based selection resumes |
 | `M` | switch the payload between `SET tick` (last-wins, retried by default) and `INCR hits` (accumulating, not retried by default) |
