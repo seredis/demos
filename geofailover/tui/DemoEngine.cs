@@ -329,7 +329,7 @@ sealed class DemoEngine : IAsyncDisposable
         }
     }
 
-    // docker-compose.yml sits in the repo root; walk up from the build output to find it
+    // docker-compose.yml sits in the demo folder (geofailover/); walk up from the build output to find it
     private static string FindRepoRoot()
     {
         var dir = new DirectoryInfo(AppContext.BaseDirectory);

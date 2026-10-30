@@ -6,7 +6,7 @@
 // last-wins SET (retried by default) and an accumulating INCR (not retried by default), and
 // drop the retry budget to a single attempt.
 //
-// Prerequisites: `docker compose up -d --wait` in the repo root.
+// Prerequisites: `docker compose up -d --wait` in the geofailover/ folder.
 //
 //   dotnet run                 interactive
 //   dotnet run -- --scripted   hands-free: stop east, wait, start east, wait, exit
