@@ -102,5 +102,5 @@ docker compose down
 
 One difference worth knowing: SE.Redis decides what to retry per command. `SET` and `GET` are
 replayed after an ambiguous fault; an `INCR` would not be by default, because a replay could
-count twice. See the [failover documentation](https://stackexchange.github.io/StackExchange.Redis/Failover)
+count twice. See the [failover documentation](https://seredis.dev/Failover)
 for the retry categories.
