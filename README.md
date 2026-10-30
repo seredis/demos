@@ -1,4 +1,4 @@
-# geofailoverdemo
+# Geo-Failover Demo
 
 This repo provides docker-based infrastructure and an E2E console app showcasing geo
 failover/failback with the [SE.Redis](https://github.com/StackExchange/StackExchange.Redis)
