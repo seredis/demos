@@ -61,6 +61,7 @@ Keys:
 | `A` | `GetClientCache().InvalidateAll()` | every row misses once |
 | `F` | `FLUSHDB` from the back door | the whole cache is discarded; keys are gone until re-seeded |
 | `S` | re-seed missing keys from the back door | |
+| `N` | 25 reads of fresh, never-seen keys, once each | admission: the prefix profiles store all 25 (`Count` +25); the `doorkeeper` profile stores none |
 | `B` | toggle `CommandFlags.CacheOptOut` on every read | what the same traffic costs with no cache: every read reaches the server |
 | `C` | next cache profile (reconnects) | see below |
 | `P` | pause reads | |
@@ -73,6 +74,7 @@ Profiles, cycled with `C`:
 | `plain` | `TimeToLive` 5s | entries live until invalidated or aged out |
 | `refresh-after` | `TimeToLive` 5s, `RefreshAfter` 3s | steadily-read entries are refreshed in the background before they expire: `Refreshes` climbs, `Expired` does not |
 | `grace` | `TimeToLive` 5s, `InvalidationGracePeriod` 1.5s | after `W`, the old value is deliberately served for up to 1.5s while one refresh runs: `ServedStale` climbs and the row is briefly `! STALE` |
+| `doorkeeper` | no `Prefixes`, `TimeToLive` 5s | `Tracking` mode with default admission: a reply is stored on its second miss, so `N` adds nothing and the hot keys still cache after one extra round trip |
 | `no cache` | none | `GetClientCache()` is null; every read reaches the server |
 
 Every profile also sets `SweepInterval` to 1s. In 4.0.146-alpha ([issue #3318](https://github.com/StackExchange/StackExchange.Redis/issues/3318)) an entry that reaches `TimeToLive` is
@@ -80,9 +82,11 @@ not replaced by the next fill until the sweep reclaims it (10s by default), so w
 the plain profile would otherwise miss for five seconds in every ten. Invalidated entries are replaced
 at once; only expiry is affected, and only until the fill path treats an expired entry as dead.
 
-The prefix mode is in use (`Prefixes = ["demo:"]`), so a key inside the prefix is cached on its first
-miss; without prefixes the default is to cache on the second miss, which is why a quick by-hand test can
-look like it is not working. The `TimeToLive` is deliberately short so that the expiry case is visible
+The prefix profiles cache an in-prefix key on its first miss. Without prefixes (the `doorkeeper`
+profile) the default is to cache on the second miss, which is why a quick by-hand test can look like it
+is not working; the counters panel shows the resolved tracking mode and admission rule for the current
+profile. The "hit rate" lines in that panel mix two sources on purpose: reads issued is the app's own
+count, GETs seen is the server's, and the difference is what never left the process. The `TimeToLive` is deliberately short so that the expiry case is visible
 inside a demo; production values are minutes.
 
 Colour is used throughout but never alone: local and server reads have their own rows and words, stale

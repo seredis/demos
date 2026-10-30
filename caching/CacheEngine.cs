@@ -18,6 +18,7 @@ sealed record KeyView(string Key, string? Cached, string? Server, double LastMic
 sealed record CacheView(
     bool Enabled,
     string Mode,
+    string Admission,
     long Count, long Bytes, long Stored, long Evicted, long Promoted, long Expired, long Refreshes, long ServedStale, long TrackedKeys,
     long Reads, long ServerReads);
 
@@ -47,12 +48,14 @@ sealed class CacheEngine : IAsyncDisposable
 
     public static readonly CacheProfile[] Profiles =
     [
-        new("plain", $"TimeToLive {Ttl.TotalSeconds:0}s, nothing else: an entry is served until it is invalidated or it ages out",
+        new("plain", $"Prefixes [demo:], TimeToLive {Ttl.TotalSeconds:0}s: in-prefix reads are stored on their first miss; served until invalidated or aged out",
             new CacheOptions { Prefixes = [Prefix], SweepInterval = Sweep, DefaultPolicy = new CachePolicy { TimeToLive = Ttl } }),
         new("refresh-after", $"TimeToLive {Ttl.TotalSeconds:0}s, RefreshAfter 3s: steadily-read entries are refreshed in the background before they expire",
             new CacheOptions { Prefixes = [Prefix], SweepInterval = Sweep, DefaultPolicy = new CachePolicy { TimeToLive = Ttl, RefreshAfter = TimeSpan.FromSeconds(3) } }),
         new("grace", $"TimeToLive {Ttl.TotalSeconds:0}s, InvalidationGracePeriod 1.5s: after another client's write, the old value is served for up to 1.5s while one refresh runs",
             new CacheOptions { Prefixes = [Prefix], SweepInterval = Sweep, DefaultPolicy = new CachePolicy { TimeToLive = Ttl, InvalidationGracePeriod = TimeSpan.FromSeconds(1.5) } }),
+        new("doorkeeper", $"no Prefixes (Tracking mode), TimeToLive {Ttl.TotalSeconds:0}s: default admission, a reply is stored on its second miss, so a key read once is never cached",
+            new CacheOptions { SweepInterval = Sweep, DefaultPolicy = new CachePolicy { TimeToLive = Ttl } }),
         new("no cache", "ClientCache not configured: every read is a round trip", null),
     ];
 
@@ -172,6 +175,27 @@ sealed class CacheEngine : IAsyncDisposable
         });
     }
 
+    /// <summary>Read a burst of never-seen keys once each: admission decides whether they pollute the cache.</summary>
+    public void OneOffBurst()
+    {
+        var db = _db;
+        if (db is null) return;
+        Mark("N");
+        Log("25 one-off reads of fresh keys: watch Count/Stored - first-miss admission stores them all, the doorkeeper stores none");
+        _ = Task.Run(async () =>
+        {
+            for (int i = 0; i < 25; i++)
+            {
+                try
+                {
+                    await db.StringGetAsync($"{Prefix}oneoff:{Guid.NewGuid():N}");
+                    Interlocked.Increment(ref _reads);
+                }
+                catch (Exception ex) { Log($"one-off read failed: {ex.Message}"); return; }
+            }
+        });
+    }
+
     public void InvalidateSelected()
     {
         var cache = _app?.GetClientCache();
@@ -216,8 +240,8 @@ sealed class CacheEngine : IAsyncDisposable
             }
             var cache = _app?.GetClientCache();
             var view = cache is null
-                ? new CacheView(false, "none", 0, 0, 0, 0, 0, 0, 0, 0, 0, _reads, _serverGets - _serverGetsAtStart)
-                : new CacheView(true, cache.EffectiveTrackingMode.ToString(), cache.Count, cache.Bytes, cache.Stored, cache.Evicted, cache.Promoted,
+                ? new CacheView(false, "none", "n/a", 0, 0, 0, 0, 0, 0, 0, 0, 0, _reads, _serverGets - _serverGetsAtStart)
+                : new CacheView(true, cache.EffectiveTrackingMode.ToString(), (cache.Options.Admission == CacheAdmission.Default ? "OnRepeatedMiss (Default)" : cache.Options.Admission.ToString()), cache.Count, cache.Bytes, cache.Stored, cache.Evicted, cache.Promoted,
                     cache.Expired, cache.Refreshes, cache.ServedStale, cache.TrackedKeys, _reads, _serverGets - _serverGetsAtStart);
             var last = _windowCount > 0 ? windows[^1] : default;
             return new Snapshot(windows, keys, view, _log.ToArray(), Profile, Bypass, Paused, last.Reads, last.ServerReads);

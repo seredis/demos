@@ -92,6 +92,7 @@ void HandleKey(ConsoleKey key)
         case ConsoleKey.A: engine.InvalidateAll(); break;
         case ConsoleKey.F: engine.FlushDb(); break;
         case ConsoleKey.S: engine.RestoreMissing(); break;
+        case ConsoleKey.N: engine.OneOffBurst(); break;
         case ConsoleKey.B: engine.ToggleBypass(); break;
         case ConsoleKey.C: engine.CycleProfile(); break;
         case ConsoleKey.P: engine.TogglePause(); break;
@@ -108,6 +109,7 @@ async Task RunScriptAsync()
         engine.ExpireSelected(); await Wait(7); // not announced: stale until TimeToLive (5s) retires it
         engine.RestoreMissing(); await Wait(3);
         engine.InvalidateSelected(); await Wait(2);
+        engine.OneOffBurst(); await Wait(3);      // prefix profile: 25 more entries
         engine.ToggleBypass(); await Wait(3);  // every read reaches the server
         engine.ToggleBypass(); await Wait(3);
         engine.InvalidateAll(); await Wait(3);

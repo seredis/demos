@@ -95,7 +95,7 @@ static class Ui
             new Markup(local.ToString()),
             new Markup(server.ToString()),
             new Markup(markers.ToString()),
-            new Markup($"[grey]rows: [{Local.ToMarkup()}]answered locally[/] / [{Server.ToMarkup()}]reached the server[/] / your actions (W write, X expire, I invalidate, A all, F flush, S seed, B bypass, C profile)   one column = 250ms, newest right[/]"));
+            new Markup($"[grey]rows: [{Local.ToMarkup()}]answered locally[/] / [{Server.ToMarkup()}]reached the server[/] / your actions (W write, X expire, I invalidate, A all, F flush, S seed, N one-offs, B bypass, C profile)   one column = 250ms, newest right[/]"));
         return new Panel(body).Header(" where each read was answered ").Border(BoxBorder.Rounded).Expand();
     }
 
@@ -149,12 +149,17 @@ static class Ui
             grid.AddRow("[grey]ServedStale[/]", c.ServedStale.ToString());
             grid.AddRow("[grey]TrackedKeys[/]", c.TrackedKeys.ToString());
         }
+        if (c.Enabled)
+        {
+            grid.AddRow("[grey]tracking mode[/]", Markup.Escape(c.Mode));
+            grid.AddRow("[grey]admission[/]", Markup.Escape(c.Admission));
+        }
         grid.AddEmptyRow();
-        grid.AddRow("[bold]measured on the server[/]", "");
-        grid.AddRow("[grey]reads issued[/]", c.Reads.ToString("N0"));
-        grid.AddRow($"[grey]GETs that reached it[/]", $"[{Server.ToMarkup()}]{c.ServerReads:N0}[/]");
+        grid.AddRow("[bold]hit rate[/]", "");
+        grid.AddRow("[grey]reads the app issued (client count)[/]", c.Reads.ToString("N0"));
+        grid.AddRow($"[grey]GETs the server saw (INFO commandstats)[/]", $"[{Server.ToMarkup()}]{c.ServerReads:N0}[/]");
         long localReads = Math.Max(0, c.Reads - c.ServerReads);
-        grid.AddRow($"[grey]answered locally[/]", $"[{Local.ToMarkup()}]{localReads:N0}[/]" + (c.Reads > 0 ? $"  ({100.0 * localReads / c.Reads:0.0}%)" : ""));
+        grid.AddRow($"[grey]answered locally (the difference)[/]", $"[{Local.ToMarkup()}]{localReads:N0}[/]" + (c.Reads > 0 ? $"  ({100.0 * localReads / c.Reads:0.0}%)" : ""));
         grid.AddEmptyRow();
         grid.AddRow("[grey]" + Markup.Escape(s.Profile.Summary) + "[/]", "");
         return new Panel(grid).Header(" counters ").Border(BoxBorder.Rounded).Expand();
@@ -170,7 +175,7 @@ static class Ui
     private static IRenderable Footer(Snapshot s)
         => new Markup(
             "[bold]↑↓[/] select  [bold]W[/] write behind back  [bold]X[/] expire 1s  [bold]I[/] Invalidate(key)  [bold]A[/] InvalidateAll  " +
-            "[bold]F[/] FLUSHDB  [bold]S[/] re-seed  [bold]B[/] bypass  [bold]C[/] next profile  [bold]P[/] pause  [bold]Q[/] quit");
+            "[bold]F[/] FLUSHDB  [bold]S[/] re-seed  [bold]N[/] one-off reads  [bold]B[/] bypass  [bold]C[/] next profile  [bold]P[/] pause  [bold]Q[/] quit");
 
     private static int SafeWidth()
     {
