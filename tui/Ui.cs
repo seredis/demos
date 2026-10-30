@@ -155,7 +155,7 @@ static class Ui
     {
         if (scriptedPhase is not null) return new Markup("[grey]scripted run; press Q to abort[/]");
         return new Markup(
-            "[bold]E[/] stop/start east  [bold]W[/] stop/start west  [bold]F[/] manual failover  [bold]R[/] restore auto  " +
+            "[bold]W[/] stop/start west  [bold]E[/] stop/start east  [bold]F[/] manual failover  [bold]R[/] restore auto  " +
             $"[bold]M[/] mode ({(engine.Mode == TrafficMode.Set ? "SET" : "INCR")})  [bold]A[/] attempts ({engine.MaxAttempts})  [bold]P[/] pause  [bold]Q[/] quit");
     }
 
