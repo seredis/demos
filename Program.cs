@@ -19,6 +19,26 @@ const string ActiveService = "redis-east"; // docker-compose service of the high
 const string EastConfiguration = "localhost:16401";
 const string WestConfiguration = "localhost:16402";
 
+// --max-attempts N (default 5). With 5 no error surfaces; with 1 (no retries at all) the operations in
+// flight when redis-east is stopped fail, and the traffic loop prints what the fault looked like.
+int maxAttempts = 5;
+for (int a = 0; a < args.Length; a++)
+{
+    string arg = args[a], value;
+    if (arg.StartsWith("--max-attempts=", StringComparison.Ordinal)) value = arg["--max-attempts=".Length..];
+    else if (arg == "--max-attempts" && a + 1 < args.Length) value = args[++a];
+    else
+    {
+        Console.Error.WriteLine($"Unknown argument '{arg}'. Usage: dotnet run [-- --max-attempts N]");
+        return 2;
+    }
+    if (!int.TryParse(value, out maxAttempts) || maxAttempts < 1)
+    {
+        Console.Error.WriteLine($"--max-attempts must be a positive integer, got '{value}'");
+        return 2;
+    }
+}
+
 ConnectionGroupMember[] members =
 [
     // Higher weight -> preferred (active) member while healthy.
@@ -45,17 +65,17 @@ MultiGroupOptions options = new MultiGroupOptions.Builder
     // keeps a flapping member out of rotation until it has been stable for the whole period.
     FailbackDelay = TimeSpan.FromSeconds(5),
 
-    // Enough retries to bridge the failover window, so no error ever surfaces to the traffic
-    // loop. The first retry waits (up to FailoverDelay, 5s) for the group to move to another
-    // member and is then sent there; subsequent retries pause RetryDelay (+ jitter).
+    // At the default of 5, enough retries to bridge the failover window, so no error ever surfaces
+    // to the traffic loop. The first retry waits (up to FailoverDelay, 5s) for the group to move to
+    // another member and is then sent there; subsequent retries pause RetryDelay (+ jitter).
     RetryPolicy = new RetryPolicy.Builder
     {
-        MaxAttempts = 5,
+        MaxAttempts = maxAttempts,
         RetryDelay = TimeSpan.FromMilliseconds(200),
     },
 };
 
-Console.WriteLine($"=== Connecting group to {ActiveService}:16401 (weight=1.0) and redis-west:16402 (weight=0.5) ===");
+Console.WriteLine($"=== Connecting group to {ActiveService}:16401 (weight=1.0) and redis-west:16402 (weight=0.5); MaxAttempts={maxAttempts} ===");
 
 await using IConnectionGroup group = await ConnectionMultiplexer.ConnectGroupAsync(members, options);
 
@@ -208,6 +228,15 @@ sealed class TrafficGenerator(IDatabaseAsync db)
             {
                 lock (Errors) Errors.Add(ex);
                 Console.WriteLine($"!!! Traffic error: {ex.GetType().Name}: {ex.Message}");
+
+                // FaultContext is what the retry controller itself uses to classify a fault; it normalises
+                // RedisConnectionException / RedisTimeoutException / RedisServerException. NotApplied is the
+                // interesting bit: true means the client knows the server never ran the command (still queued,
+                // or a pre-execution server error such as LOADING), so a replay could not double-apply.
+                var fault = new FaultContext(ex);
+                var category = fault.Flags & CommandFlags.CommandRetryNever; // the retry-category bit region
+                Console.WriteLine($"    kind={fault.ErrorKind} connection={fault.ConnectionFailureType} " +
+                                  $"notApplied={fault.NotApplied} category={category}");
             }
 
             try

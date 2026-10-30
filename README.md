@@ -58,6 +58,17 @@ project references the current release.
 dotnet run
 ```
 
+By default the retry policy allows 5 attempts per operation, which is enough to bridge the failover
+window, so no error reaches the traffic loop. To see what a surfaced fault looks like, lower it:
+
+```bash
+dotnet run -- --max-attempts 1
+```
+
+With a single attempt the operations in flight when `redis-east` stops fail outright, and the app
+prints the fault classification SE.Redis attaches to them (`kind`, `connection`, `notApplied`, and the
+command's retry `category`). `notApplied=True` means the client knows the server never ran the command.
+
 The container stop/start is fully automated - the app shells out to `docker compose` and prints
 a banner before doing so. Watch the output for the `>>> ACTIVE MEMBER SWITCHED` lines and the
 per-member `[Disconnected]` / `[Reconnected]` events.
