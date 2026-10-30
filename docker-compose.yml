@@ -1,0 +1,24 @@
+services:
+  # Simulates the "primary region" database (highest weight in Program.cs).
+  redis-east:
+    image: redis:8.2
+    container_name: redis-east
+    ports:
+      - "16401:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 2s
+      retries: 10
+
+  # Simulates the "secondary region" database (lower weight in Program.cs).
+  redis-west:
+    image: redis:8.2
+    container_name: redis-west
+    ports:
+      - "16402:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 2s
+      retries: 10
