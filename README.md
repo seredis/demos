@@ -6,9 +6,13 @@ connection group API (`ConnectionMultiplexer.ConnectGroupAsync`). It is a .NET p
 [redis-py example](https://github.com/redis-developer/redis-py-geo-failover-example).
 
 Locally, the "geo distributed" setup is simulated by two independent standalone Redis containers.
-There is no replication between them - in production this would be a Redis Active-Active
-deployment where data is synchronized. The goal here is purely to demonstrate how the client
-fails over from one endpoint to another and falls back once the preferred endpoint recovers.
+They do not replicate to each other, so this is two separate datasets behind one client, not
+Active-Active: after a failover the new member starts cold, and anything written to it during the
+outage is never seen by the other member. That is fine for a cache, where a miss is recoverable and a
+lost write only costs a recompute. The demo traffic masks it by writing each key immediately before
+reading it. In production the two endpoints would be a Redis Active-Active deployment, where the
+datasets converge and the same client code gives a consistent view. The goal here is purely to show how
+the client fails over from one endpoint to the other and falls back once the preferred endpoint recovers.
 
 ## What the demo does
 
