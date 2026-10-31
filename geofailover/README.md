@@ -136,6 +136,17 @@ A suggested walk-through: let it run on east, press `E`, watch the strip turn or
 5s failback delay. Then press `M` and repeat: the same outage now puts `!` cells on the strip,
 because an `INCR` cannot safely be replayed. `A` shows the same thing from the other direction.
 
+### Code tour (for presenting)
+
+The library-facing code is isolated so it can be shown on its own, e.g. `cat Setup.cs`:
+
+- [`tui/Setup.cs`](tui/Setup.cs) — the **complete** connection setup: two `ConnectionGroupMember`s,
+  one `MultiGroupOptions`, `ConnectGroupAsync`, and `WithRetry()` applied once. Nothing else.
+- [`tui/CoreUsage.cs`](tui/CoreUsage.cs) — the **complete** traffic: `SET`/`INCR` plus the
+  proving `GET`, against a plain `IDatabaseAsync`. Nothing in it knows about failover.
+- Everything else is demo scaffolding: `DemoEngine.cs` (state, docker, probes, keyboard),
+  `Ui.cs` (the Spectre layout), `Program.cs` (the render loop).
+
 Colour is used throughout but never alone: region is also carried by glyph and by name, state is
 written out in words, and errors have their own glyph. Blue and orange stay distinct under the common
 red/green deficiencies. `NO_COLOR=1` turns colour off entirely.

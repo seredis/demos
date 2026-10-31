@@ -12,7 +12,7 @@ readonly record struct Window(int Reads, int ServerReads, string? Marker);
 
 readonly record struct LogLine(DateTime At, string Text);
 
-sealed record KeyView(string Key, string? Cached, string? Server, double LastMicros, bool Selected);
+sealed record KeyView(string Key, string? Cached, string? Server, double LastMicros, long Reads, bool Selected);
 
 /// <summary>Counters copied from <see cref="ClientCache"/>, plus the demo's own.</summary>
 sealed record CacheView(
@@ -33,31 +33,9 @@ sealed record Snapshot(Window[] Windows, KeyView[] Keys, CacheView Cache, LogLin
 /// is one the server never sees. That is the measurement the library's own tests use, and the only one
 /// the client cannot fool.
 /// </summary>
-sealed class CacheEngine : IAsyncDisposable
+sealed partial class CacheEngine : IAsyncDisposable
 {
-    private const string Endpoint = "localhost:16411";
-    private const string Prefix = "demo:";
     public const int KeyCount = 8;
-    private static readonly TimeSpan Ttl = TimeSpan.FromSeconds(5);
-
-    // 4.0.146-alpha (StackExchange.Redis issue #3318): an entry that reaches TimeToLive is not replaced by the next fill until the sweep
-    // reclaims it (SweepInterval, 10s by default), so with a 5s TTL the cache would spend half its life
-    // missing. A 1s sweep bounds that to a second. Invalidated entries are replaced at once; only
-    // expiry is affected. Not needed once the fill path treats an expired entry as dead.
-    private static readonly TimeSpan Sweep = TimeSpan.FromSeconds(1);
-
-    public static readonly CacheProfile[] Profiles =
-    [
-        new("plain", $"Prefixes [demo:], TimeToLive {Ttl.TotalSeconds:0}s: in-prefix reads are stored on their first miss; served until invalidated or aged out",
-            new CacheOptions { Prefixes = [Prefix], SweepInterval = Sweep, DefaultPolicy = new CachePolicy { TimeToLive = Ttl } }),
-        new("refresh-after", $"TimeToLive {Ttl.TotalSeconds:0}s, RefreshAfter 3s: steadily-read entries are refreshed in the background before they expire",
-            new CacheOptions { Prefixes = [Prefix], SweepInterval = Sweep, DefaultPolicy = new CachePolicy { TimeToLive = Ttl, RefreshAfter = TimeSpan.FromSeconds(3) } }),
-        new("grace", $"TimeToLive {Ttl.TotalSeconds:0}s, InvalidationGracePeriod 1.5s: after another client's write, the old value is served for up to 1.5s while one refresh runs",
-            new CacheOptions { Prefixes = [Prefix], SweepInterval = Sweep, DefaultPolicy = new CachePolicy { TimeToLive = Ttl, InvalidationGracePeriod = TimeSpan.FromSeconds(1.5) } }),
-        new("doorkeeper", $"no Prefixes (Tracking mode), TimeToLive {Ttl.TotalSeconds:0}s: default admission, a reply is stored on its second miss, so a key read once is never cached",
-            new CacheOptions { SweepInterval = Sweep, DefaultPolicy = new CachePolicy { TimeToLive = Ttl } }),
-        new("no cache", "ClientCache not configured: every read is a round trip", null),
-    ];
 
     private readonly object _sync = new();
     private readonly Queue<LogLine> _log = new();
@@ -75,7 +53,30 @@ sealed class CacheEngine : IAsyncDisposable
     private readonly string?[] _cached = new string?[KeyCount];
     private readonly string?[] _serverValues = new string?[KeyCount];
     private readonly double[] _lastMicros = new double[KeyCount];
-    private readonly Random _random = new();
+    private readonly long[] _keyReads = new long[KeyCount];
+
+    // The read mix is zipf-adjacent rather than zipf proper: weight 1/(rank+1), i.e. a Zipf-Mandelbrot
+    // with a +1 shift, which keeps a hot head (item:1 ~27% of reads) without the tail going silent
+    // (item:8 ~6%) - a genuinely zipfian tail would be too quiet to watch in a demo this small.
+    private static readonly double[] CumulativeWeight = BuildCumulativeWeights();
+
+    private static double[] BuildCumulativeWeights()
+    {
+        var cumulative = new double[KeyCount];
+        double sum = 0;
+        for (int i = 0; i < KeyCount; i++) cumulative[i] = sum += 1.0 / (i + 2);
+        return cumulative;
+    }
+
+    private static int NextKey()
+    {
+        double r = Random.Shared.NextDouble() * CumulativeWeight[^1];
+        for (int i = 0; i < KeyCount - 1; i++)
+        {
+            if (r < CumulativeWeight[i]) return i;
+        }
+        return KeyCount - 1;
+    }
 
     private long _reads;              // reads the app issued (through the cache, or bypassing it)
     private long _serverGets;         // cmdstat_get calls on the server, from INFO
@@ -91,7 +92,7 @@ sealed class CacheEngine : IAsyncDisposable
 
     public async Task StartAsync()
     {
-        _backDoor = await ConnectionMultiplexer.ConnectAsync(Endpoint + ",abortConnect=false,allowAdmin=true"); // INFO and FLUSHDB are admin commands
+        _backDoor = await ConnectBackDoorAsync();
         _server = _backDoor.GetServers()[0];
         var bd = _backDoor.GetDatabase();
         for (int i = 0; i < KeyCount; i++)
@@ -101,17 +102,15 @@ sealed class CacheEngine : IAsyncDisposable
         _serverGetsAtStart = await ReadServerGetsAsync();
         _serverGetsWindowBase = _serverGetsAtStart;
 
-        await ConnectAppAsync();
+        await ApplyProfileAsync();
         _reader = Task.Run(ReaderLoopAsync);
         _probe = Task.Run(ProbeLoopAsync);
     }
 
-    private async Task ConnectAppAsync()
+    /// <summary>Connect with the current profile (see Setup.cs) and swap the live connection.</summary>
+    private async Task ApplyProfileAsync()
     {
-        var options = ConfigurationOptions.Parse(Endpoint + ",abortConnect=false");
-        options.Protocol = RedisProtocol.Resp3; // invalidations arrive as RESP3 push messages
-        options.ClientCache = Profile.Options;
-        var muxer = await ConnectionMultiplexer.ConnectAsync(options);
+        var muxer = await ConnectAppAsync();
         var old = _app;
         _app = muxer;
         _db = muxer.GetDatabase();
@@ -138,7 +137,7 @@ sealed class CacheEngine : IAsyncDisposable
         ProfileIndex = (ProfileIndex + 1) % Profiles.Length;
         Mark("C");
         Log($"switching to [{Profile.Name}]: {Profile.Summary}");
-        _ = ConnectAppAsync();
+        _ = ApplyProfileAsync();
     }
 
     /// <summary>Write the selected key from the other connection: the server pushes an invalidation.</summary>
@@ -236,7 +235,7 @@ sealed class CacheEngine : IAsyncDisposable
             var keys = new KeyView[KeyCount];
             for (int i = 0; i < KeyCount; i++)
             {
-                keys[i] = new KeyView(_keys[i], _cached[i], _serverValues[i], _lastMicros[i], i == Selected);
+                keys[i] = new KeyView(_keys[i], _cached[i], _serverValues[i], _lastMicros[i], _keyReads[i], i == Selected);
             }
             var cache = _app?.GetClientCache();
             var view = cache is null
@@ -273,34 +272,35 @@ sealed class CacheEngine : IAsyncDisposable
     private async Task ReaderLoopAsync()
     {
         var token = _stop.Token;
-        int i = 0;
-        while (!token.IsCancellationRequested)
+        try
         {
-            var db = _db;
-            if (!Paused && db is not null)
+            // jitter the first touch of each key: filled all at once, the whole catalogue would reach
+            // TimeToLive in the same instant, and every TTL boundary would be a synchronized miss
+            // stampede (TimeToLive is fixed, so entries expire in the order - and spacing - they fill)
+            foreach (var k in Enumerable.Range(0, KeyCount).OrderBy(_ => Random.Shared.Next()))
             {
-                int k = i++ % KeyCount;
-                var flags = Bypass ? CommandFlags.CacheOptOut : CommandFlags.None;
-                var started = Stopwatch.GetTimestamp();
-                try
-                {
-                    var value = await db.StringGetAsync(_keys[k], flags);
-                    var micros = Stopwatch.GetElapsedTime(started).TotalMilliseconds * 1000;
-                    lock (_sync)
-                    {
-                        _cached[k] = value.IsNull ? null : value.ToString();
-                        _lastMicros[k] = micros;
-                    }
-                    Interlocked.Increment(ref _reads);
-                }
-                catch (Exception ex)
-                {
-                    Log($"read failed: {ex.GetType().Name}: {ex.Message}");
-                    try { await Task.Delay(500, token); } catch (OperationCanceledException) { break; }
-                }
+                await ReadKeyAsync(k, token);
+                await Task.Delay(Random.Shared.Next(50, 300), token);
             }
-            try { await Task.Delay(5, token); } catch (OperationCanceledException) { break; }
+            while (!token.IsCancellationRequested)
+            {
+                if (!Paused) await ReadKeyAsync(NextKey(), token);
+                await Task.Delay(5, token);
+            }
         }
+        catch (OperationCanceledException) { }
+    }
+
+    /// <summary>What <see cref="ReadKeyAsync"/> (CoreUsage.cs) records about each read, for the UI.</summary>
+    private void RecordRead(int k, RedisValue value, TimeSpan elapsed)
+    {
+        lock (_sync)
+        {
+            _cached[k] = value.IsNull ? null : value.ToString();
+            _lastMicros[k] = elapsed.TotalMilliseconds * 1000;
+            _keyReads[k]++;
+        }
+        Interlocked.Increment(ref _reads);
     }
 
     /// <summary>Read the truth: the server's values (uncached, via MGET so it does not disturb cmdstat_get) and its GET count.</summary>
@@ -349,7 +349,9 @@ sealed class CacheEngine : IAsyncDisposable
         return 0; // no GET has ever been issued
     }
 
-    private string Price() => $"£{_random.Next(1, 200)}.{_random.Next(0, 100):00}";
+    // Random.Shared: prices are made on the UI thread and back-door tasks, the key mix on the reader
+    // loop - a shared System.Random instance is not thread-safe
+    private static string Price() => $"£{Random.Shared.Next(1, 200)}.{Random.Shared.Next(0, 100):00}";
 
     private void Mark(string marker) { lock (_sync) { _pendingMarker = marker; } }
 

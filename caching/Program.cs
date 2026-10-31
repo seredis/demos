@@ -39,32 +39,51 @@ var quit = new CancellationTokenSource();
 Console.CancelKeyPress += (_, e) => { e.Cancel = true; quit.Cancel(); };
 var script = scripted ? Task.Run(RunScriptAsync) : Task.CompletedTask;
 
-int height = AnsiConsole.Profile.Height;
+int height = AnsiConsole.Profile.Height, width = AnsiConsole.Profile.Width;
 var layout = Ui.Build(height, out bool compact);
-await AnsiConsole.Live(layout)
-    .AutoClear(false)
-    .Overflow(VerticalOverflow.Crop)
-    .StartAsync(async ctx =>
-    {
-        while (!quit.IsCancellationRequested)
+try
+{
+    await AnsiConsole.Live(layout)
+        .AutoClear(false)
+        .Overflow(VerticalOverflow.Crop)
+        .StartAsync(async ctx =>
         {
-            if (AnsiConsole.Profile.Height != height)
+            while (!quit.IsCancellationRequested)
             {
-                height = AnsiConsole.Profile.Height;
-                layout = Ui.Build(height, out compact);
-                ctx.UpdateTarget(layout);
-            }
-            Ui.Update(layout, compact, engine.Snapshot());
-            try { ctx.Refresh(); }
-            catch (ArgumentOutOfRangeException) { /* terminal too small for a frame; try again next tick */ }
+                try
+                {
+                    if (AnsiConsole.Profile.Height != height || AnsiConsole.Profile.Width != width)
+                    {
+                        height = AnsiConsole.Profile.Height;
+                        width = AnsiConsole.Profile.Width;
+                        layout = Ui.Build(height, out compact);
+                        ctx.UpdateTarget(layout);
+                    }
+                    Ui.Update(layout, compact, engine.Snapshot());
+                    ctx.Refresh();
+                }
+                catch (ArgumentOutOfRangeException)
+                {
+                    // Spectre's renderer faults when the window shrinks mid-frame (Segment.SplitLines
+                    // is handed an area that no longer exists) - and UpdateTarget refreshes internally,
+                    // so the whole frame needs the guard; drop the frame, rebuild at the next geometry
+                    height = -1;
+                }
 
-            if (!Console.IsInputRedirected)
-            {
-                while (Console.KeyAvailable) HandleKey(Console.ReadKey(intercept: true).Key);
+                if (!Console.IsInputRedirected)
+                {
+                    while (Console.KeyAvailable) HandleKey(Console.ReadKey(intercept: true).Key);
+                }
+                try { await Task.Delay(100, quit.Token); } catch (OperationCanceledException) { }
             }
-            try { await Task.Delay(100, quit.Token); } catch (OperationCanceledException) { }
-        }
-    });
+        });
+}
+catch (ArgumentOutOfRangeException)
+{
+    // after the loop returns, Spectre paints one final frame from inside StartAsync; a resize at the
+    // wrong moment faults that paint the same way, and only this call site can catch it. The demo is
+    // over - losing the last frame costs nothing.
+}
 
 await script;
 var final = engine.Snapshot();

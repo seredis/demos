@@ -8,7 +8,9 @@ RESP3). The feature is in the v4 alpha; this project references it directly.
 Two connections to one Redis server:
 
 - the **app** connection has the cache configured and reads a small catalogue (`demo:item:1..8`)
-  continuously, a few hundred reads a second;
+  continuously, a few hundred reads a second. The key mix is skewed (zipf-adjacent: `item:1` gets
+  ~27% of reads, `item:8` ~6% — the `reads` column shows the histogram), and the first touch of
+  each key is jittered so the catalogue does not expire, and so miss, in lockstep;
 - the **back door** connection has no cache. It writes, expires and flushes keys behind the app's back,
   and reads the truth for the display.
 
@@ -43,8 +45,9 @@ What is on screen:
 - **Strip**: one column per 250ms. Top row, how much of that window was answered locally (blue);
   second row, how much reached the server (orange); third row, a letter for each action you took, so
   cause and effect line up.
-- **The catalogue**: each key, the value the app sees through the cache, the value the server actually
-  holds, and whether they agree. A row goes red with a `!` when they do not.
+- **The catalogue**: each key, how often the app reads it (a bar and a count — the skewed read mix
+  as a histogram), the value the app sees through the cache, the value the server actually holds,
+  and whether they agree. A row goes red with a `!` when they do not.
 - **Counters**: everything `GetClientCache()` exposes (`Count`, `Bytes`, `Stored`, `Evicted`,
   `Promoted`, `Expired`, `Refreshes`, `ServedStale`, `TrackedKeys`, `EffectiveTrackingMode`), and the
   server-side measurement of reads issued against reads that reached it.
@@ -91,6 +94,20 @@ inside a demo; production values are minutes.
 
 Colour is used throughout but never alone: local and server reads have their own rows and words, stale
 rows carry a `!`, and the action markers are letters. `NO_COLOR=1` turns colour off.
+
+## Code tour (for presenting)
+
+The library-facing code is isolated so it can be shown on its own, e.g. `cat Setup.cs`:
+
+- [`Setup.cs`](Setup.cs) — the **complete** connection setup: the cache profiles (`CacheOptions` /
+  `CachePolicy`), the app connection that attaches one of them via `ConfigurationOptions.ClientCache`,
+  and the uncached back-door connection. Attaching the cache is the only thing this app does
+  differently from an uncached one.
+- [`CoreUsage.cs`](CoreUsage.cs) — the **complete** read path: one plain `StringGetAsync` per read.
+  No code there knows whether a read is answered locally; the only per-call option is
+  `CommandFlags.CacheOptOut`.
+- Everything else is demo scaffolding: `CacheEngine.cs` (traffic shaping, back-door actions, server
+  measurement), `Ui.cs` (the Spectre layout), `Program.cs` (the render loop).
 
 ## 3. Cleanup
 

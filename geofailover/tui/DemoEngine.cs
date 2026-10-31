@@ -32,13 +32,8 @@ sealed record MemberView(
 /// Drives the connection group, the traffic and the docker containers, and exposes a snapshot
 /// of state for the UI. All public state access goes through <see cref="Snapshot"/>.
 /// </summary>
-sealed class DemoEngine : IAsyncDisposable
+sealed partial class DemoEngine : IAsyncDisposable
 {
-    public const string EastService = "redis-east";
-    public const string WestService = "redis-west";
-    private const string EastEndpoint = "localhost:16401";
-    private const string WestEndpoint = "localhost:16402";
-
     // an operation that took longer than this was almost certainly retried (RetryDelay is 200ms,
     // the failover wait can be up to 5s); there is no per-attempt callback in the library
     private static readonly TimeSpan RetryThreshold = TimeSpan.FromMilliseconds(350);
@@ -66,22 +61,8 @@ sealed class DemoEngine : IAsyncDisposable
 
     public async Task StartAsync()
     {
-        _east = new ConnectionGroupMember(EastEndpoint, name: EastService) { Weight = 1.0 };
-        _west = new ConnectionGroupMember(WestEndpoint, name: WestService) { Weight = 0.5 };
-
-        MultiGroupOptions options = new MultiGroupOptions.Builder
-        {
-            CircuitBreaker = new CircuitBreaker.Builder { MinimumNumberOfFailures = 2, MetricsWindowSize = TimeSpan.FromSeconds(2) },
-            HealthCheckInterval = TimeSpan.FromSeconds(1),
-            FailbackDelay = TimeSpan.FromSeconds(5),
-            RetryPolicy = new RetryPolicy.Builder { MaxAttempts = 5, RetryDelay = TimeSpan.FromMilliseconds(200) },
-        };
-
-        _group = await ConnectionMultiplexer.ConnectGroupAsync([_east, _west], options);
+        _group = await ConnectGroupAsync();
         _group.ConnectionChanged += OnConnectionChanged;
-
-        _retrying = _group.GetDatabase().WithRetry();
-        _retryingOnce = _group.GetDatabase().WithRetry(new RetryPolicy.Builder { MaxAttempts = 1 });
 
         // direct connections, bypassing the group: used to stamp each server with its region and
         // to read back what each one actually holds
@@ -215,12 +196,7 @@ sealed class DemoEngine : IAsyncDisposable
                 var started = Stopwatch.GetTimestamp();
                 try
                 {
-                    // the payload write: what the mode toggle changes
-                    if (Mode == TrafficMode.Set) await db.StringSetAsync("tick", Interlocked.Increment(ref _tick));
-                    else await db.StringIncrementAsync("hits");
-
-                    // the proof of origin: a read-only command, always within the default retry category
-                    var region = ParseRegion(await db.StringGetAsync("region"));
+                    var region = await WriteAndProveAsync(db); // the actual traffic: CoreUsage.cs
                     var elapsed = Stopwatch.GetElapsedTime(started);
                     Record(new Cell(region, elapsed > RetryThreshold, false));
                 }

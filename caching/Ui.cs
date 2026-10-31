@@ -99,6 +99,14 @@ static class Ui
         return new Panel(body).Header(" where each read was answered ").Border(BoxBorder.Rounded).Expand();
     }
 
+    private static string Compact(long n) => n switch
+    {
+        < 1_000 => n.ToString(),
+        < 10_000 => $"{n / 1000.0:0.0}k",
+        < 1_000_000 => $"{n / 1000}k",
+        _ => $"{n / 1_000_000.0:0.0}M",
+    };
+
     private static string Bar(int part, int whole)
     {
         if (whole <= 0 || part <= 0) return " ";
@@ -110,20 +118,25 @@ static class Ui
     {
         var table = new Table().Border(TableBorder.Simple).Expand();
         table.AddColumn(" ");
-        table.AddColumn("key");
+        table.AddColumn(new TableColumn("key").NoWrap());
+        table.AddColumn(new TableColumn("reads").NoWrap());
         table.AddColumn(new TableColumn($"[{Local.ToMarkup()}]app sees (via cache)[/]"));
         table.AddColumn(new TableColumn($"[{Server.ToMarkup()}]server has[/]"));
         table.AddColumn(new TableColumn("state"));
         table.AddColumn(new TableColumn("last read").RightAligned());
+        long maxReads = Math.Max(1, s.Keys.Max(k => k.Reads));
         foreach (var k in s.Keys)
         {
             bool stale = k.Cached != k.Server;
             string state = stale
                 ? (k.Server is null ? $"[{Stale.ToMarkup()} bold]! STALE: gone on server[/]" : $"[{Stale.ToMarkup()} bold]! STALE[/]")
                 : "[grey]in sync[/]";
+            // the bars stack into a histogram of the (deliberately skewed) read mix
+            int bar = (int)Math.Round(5.0 * k.Reads / maxReads);
             table.AddRow(
                 k.Selected ? "[bold]>[/]" : " ",
                 k.Selected ? $"[bold]{Markup.Escape(k.Key)}[/]" : Markup.Escape(k.Key),
+                $"{new string('▮', bar),-5} [grey]{Compact(k.Reads)}[/]",
                 Markup.Escape(k.Cached ?? "(nil)"),
                 Markup.Escape(k.Server ?? "(nil)"),
                 state,
