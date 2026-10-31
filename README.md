@@ -7,6 +7,6 @@ needs, and pins the library version it targets, so demos can sit on different re
 | Demo | Shows | Library |
 |----------|-------|---------|
 | [`geofailover/`](geofailover/) | Connection groups: weighted members, health checks, circuit breaker, failover and failback, per-command retry categories. A scripted console run and an interactive TUI. | 3.4.x |
-| `caching/` | Client-side caching in v4. Coming. | 4.x |
+| [`caching/`](caching/) | Client-side caching in v4: server-assisted invalidation, the cases the server cannot announce, manual `Invalidate`, `GetClientCache()` counters, and the hit rate measured on the server. Interactive TUI. | 4.0 alpha |
 
 All demos need Docker with the compose plugin and the .NET 10 SDK.
