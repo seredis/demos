@@ -12,7 +12,7 @@
   <ItemGroup>
     <PackageReference Include="Spectre.Console" Version="0.57.2" />
     <!-- client-side caching is a v4 feature; v4 is in alpha -->
-    <PackageReference Include="StackExchange.Redis" Version="4.0.146-alpha" />
+    <PackageReference Include="StackExchange.Redis" Version="4.0.155-alpha" />
   </ItemGroup>
 
 </Project>

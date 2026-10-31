@@ -80,11 +80,6 @@ Profiles, cycled with `C`:
 | `doorkeeper` | no `Prefixes`, `TimeToLive` 5s | `Tracking` mode with default admission: a reply is stored on its second miss, so `N` adds nothing and the hot keys still cache after one extra round trip |
 | `no cache` | none | `GetClientCache()` is null; every read reaches the server |
 
-Every profile also sets `SweepInterval` to 1s. In 4.0.146-alpha ([issue #3318](https://github.com/StackExchange/StackExchange.Redis/issues/3318)) an entry that reaches `TimeToLive` is
-not replaced by the next fill until the sweep reclaims it (10s by default), so with a 5s `TimeToLive`
-the plain profile would otherwise miss for five seconds in every ten. Invalidated entries are replaced
-at once; only expiry is affected, and only until the fill path treats an expired entry as dead.
-
 The prefix profiles cache an in-prefix key on its first miss. Without prefixes (the `doorkeeper`
 profile) the default is to cache on the second miss, which is why a quick by-hand test can look like it
 is not working; the counters panel shows the resolved tracking mode and admission rule for the current
