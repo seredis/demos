@@ -4,8 +4,11 @@ using StackExchange.Redis.Caching;
 
 namespace CachingDemo;
 
-/// <summary>A cache configuration the demo can switch to live (each switch is a reconnect).</summary>
-sealed record CacheProfile(string Name, string Summary, CacheOptions? Options);
+/// <summary>A cache policy the demo can switch to live (each switch is a reconnect); null means no cache.</summary>
+sealed record CacheProfile(string Name, string Summary, CachePolicy? Policy);
+
+/// <summary>A tracking mode the demo can switch to live, and whether Prefixes are given with it.</summary>
+sealed record TrackingChoice(string Name, CacheTrackingMode Mode, bool Prefixed, string Summary);
 
 /// <summary>One 250ms window of traffic, for the strip.</summary>
 readonly record struct Window(int Reads, int ServerReads, string? Marker);
@@ -22,7 +25,8 @@ sealed record CacheView(
     long Count, long Bytes, long Stored, long Evicted, long Promoted, long Expired, long Refreshes, long ServedStale, long TrackedKeys,
     long Reads, long ServerReads);
 
-sealed record Snapshot(Window[] Windows, KeyView[] Keys, CacheView Cache, LogLine[] Log, CacheProfile Profile, bool Bypass, bool Paused, int LastWindowReads, int LastWindowServerReads);
+sealed record Snapshot(Window[] Windows, KeyView[] Keys, CacheView Cache, LogLine[] Log, CacheProfile Profile, TrackingChoice Tracking, string KeyspaceEvents,
+    bool Bypass, bool Paused, int LastWindowReads, int LastWindowServerReads);
 
 /// <summary>
 /// Drives two connections to one Redis server:
@@ -39,6 +43,7 @@ sealed partial class CacheEngine : IAsyncDisposable
 
     private readonly object _sync = new();
     private readonly Queue<LogLine> _log = new();
+    private readonly List<string> _transcript = new(); // every event, with the counters at that moment; printed after a scripted run
     private readonly Window[] _windows = new Window[400];
     private int _windowCount, _windowHead;
     private readonly CancellationTokenSource _stop = new();
@@ -54,6 +59,8 @@ sealed partial class CacheEngine : IAsyncDisposable
     private readonly string?[] _serverValues = new string?[KeyCount];
     private readonly double[] _lastMicros = new double[KeyCount];
     private readonly long[] _keyReads = new long[KeyCount];
+    private readonly long[] _staleSince = new long[KeyCount]; // Stopwatch timestamp of the first probe that saw the row out of sync, or 0
+    private readonly SemaphoreSlim _reconnect = new(1, 1);
 
     // The read mix is zipf-adjacent rather than zipf proper: weight 1/(rank+1), i.e. a Zipf-Mandelbrot
     // with a +1 shift, which keeps a hot head (item:1 ~27% of reads) without the tail going silent
@@ -83,9 +90,12 @@ sealed partial class CacheEngine : IAsyncDisposable
     private long _serverGetsAtStart;
     private long _readsWindowBase, _serverGetsWindowBase;
     private string? _pendingMarker;
+    private string _keyspaceEvents = "", _keyspaceEventsAtStart = "";
 
     public int ProfileIndex { get; private set; }
     public CacheProfile Profile => Profiles[ProfileIndex];
+    public int TrackingIndex { get; private set; }
+    public TrackingChoice Tracking => TrackingModes[TrackingIndex];
     public bool Bypass { get; private set; }
     public bool Paused { get; private set; }
     public int Selected { get; private set; }
@@ -101,6 +111,7 @@ sealed partial class CacheEngine : IAsyncDisposable
         }
         _serverGetsAtStart = await ReadServerGetsAsync();
         _serverGetsWindowBase = _serverGetsAtStart;
+        _keyspaceEvents = _keyspaceEventsAtStart = await ReadKeyspaceEventsAsync();
 
         await ApplyProfileAsync();
         _reader = Task.Run(ReaderLoopAsync);
@@ -110,13 +121,19 @@ sealed partial class CacheEngine : IAsyncDisposable
     /// <summary>Connect with the current profile (see Setup.cs) and swap the live connection.</summary>
     private async Task ApplyProfileAsync()
     {
-        var muxer = await ConnectAppAsync();
-        var old = _app;
-        _app = muxer;
-        _db = muxer.GetDatabase();
-        var cache = muxer.GetClientCache();
-        Log($"connected [{Profile.Name}]: {(cache is null ? "no client cache" : $"cache on, tracking mode {cache.EffectiveTrackingMode}")}");
-        if (old is not null) await old.DisposeAsync();
+        await _reconnect.WaitAsync(); // two quick key presses must not race over _app
+        try
+        {
+            var muxer = await ConnectAppAsync();
+            var old = _app;
+            _app = muxer;
+            _db = muxer.GetDatabase();
+            var cache = muxer.GetClientCache();
+            Log($"connected [{Profile.Name} / {Tracking.Name} / {Admission}]: {(cache is null ? "no client cache" : $"cache on, EffectiveTrackingMode {cache.EffectiveTrackingMode}, Admission {cache.Options.Admission}")}");
+            if (old is not null) await old.DisposeAsync();
+        }
+        catch (Exception ex) { Log($"reconnect failed: {ex.GetType().Name}: {ex.Message}"); }
+        finally { _reconnect.Release(); }
     }
 
     // ---- keyboard ----
@@ -136,8 +153,76 @@ sealed partial class CacheEngine : IAsyncDisposable
     {
         ProfileIndex = (ProfileIndex + 1) % Profiles.Length;
         Mark("C");
-        Log($"switching to [{Profile.Name}]: {Profile.Summary}");
+        Log($"policy [{Profile.Name}]: {Profile.Summary}");
         _ = ApplyProfileAsync();
+    }
+
+    public void CycleTracking()
+    {
+        TrackingIndex = (TrackingIndex + 1) % TrackingModes.Length;
+        Mark("T");
+        Log($"tracking [{Tracking.Name}]: {Tracking.Summary}");
+        _ = ApplyProfileAsync();
+    }
+
+    public void ToggleAdmission()
+    {
+        Admission = Admission == CacheAdmission.OnFirstMiss ? CacheAdmission.OnRepeatedMiss : CacheAdmission.OnFirstMiss;
+        Mark("D");
+        Log(Admission == CacheAdmission.OnFirstMiss
+            ? "Admission OnFirstMiss: every cacheable reply is stored the first time it misses"
+            : "Admission OnRepeatedMiss (the default): a first miss is only remembered; the reply is stored on the next miss");
+        if (Tracking.Mode == CacheTrackingMode.Default && Tracking.Prefixed)
+        {
+            Log("  (not consulted under by-prefix: an in-prefix read is an implicit CacheOptIn, which stores on the first miss)");
+        }
+        _ = ApplyProfileAsync();
+    }
+
+    /// <summary>Flip the server's notify-keyspace-events between off and KA, from the back door. No reconnect:
+    /// the keyspace mode's subscription is already in place; this decides whether anything is published to it.</summary>
+    public void ToggleKeyspaceEvents()
+    {
+        Mark("K");
+        string value = KeyspaceEventsInvalidate(_keyspaceEvents) ? "" : "KA";
+        Log(value.Length == 0
+            ? "back door: CONFIG SET notify-keyspace-events \"\"  (keyspace mode now hears nothing: it behaves as None)"
+            : "back door: CONFIG SET notify-keyspace-events KA  (keyspace mode now hears every write, expiry and eviction under the prefix)");
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await _server.ConfigSetAsync("notify-keyspace-events", value);
+                lock (_sync) { _keyspaceEvents = value; }
+            }
+            catch (Exception ex) { Log($"CONFIG SET failed: {ex.Message}"); }
+        });
+    }
+
+    /// <summary>Whether a notify-keyspace-events value publishes anything that could invalidate a cached read:
+    /// K (keyspace channel) plus at least one event class that changes a key.</summary>
+    private static bool KeyspaceEventsInvalidate(string value)
+        => value.Contains('K') && value.Any(c => c is 'A' or 'g' or 's' or 'h' or 'z' or 'x' or 'e' or 'l' or 't' or 'd' or '$');
+
+    /// <summary>What the current mode will do about a change made by another client: the text after each back-door action.</summary>
+    private string InvalidationNote(bool expiry = false, bool flush = false)
+    {
+        var mode = _app?.GetClientCache()?.EffectiveTrackingMode;
+        switch (mode)
+        {
+            case null:
+                return "no cache: the next read fetches it";
+            case CacheTrackingMode.None:
+                return "nothing is announced in None mode: the cached copy lives until TimeToLive";
+            case CacheTrackingMode.KeyspaceNotifications:
+                if (flush) return "FLUSHDB emits no per-key keyspace event: the cache keeps everything, stale until TimeToLive";
+                if (!KeyspaceEventsInvalidate(_keyspaceEvents)) return "notify-keyspace-events is off: nothing is published; stale until TimeToLive ('K' turns it on)";
+                return expiry ? "the x event IS published: keyspace mode drops the copy as the key expires" : "a __keyspace@ event drops the app's copy";
+            default:
+                if (expiry) return "the server pushes an invalidation once it notices the expiry: near-instant on this tiny keyspace, lazy on a large one; TimeToLive is the backstop";
+                if (flush) return "the server pushes a flush invalidation: the app's whole cache is discarded";
+                return "the server pushes an invalidation; the app's copy is dropped";
+        }
     }
 
     /// <summary>Write the selected key from the other connection: the server pushes an invalidation.</summary>
@@ -146,16 +231,16 @@ sealed partial class CacheEngine : IAsyncDisposable
         var key = _keys[Selected];
         var value = Price();
         Mark("W");
-        Log($"back door: SET {key} {value}  (server will invalidate the app's copy)");
+        Log($"back door: SET {key} {value}  ({InvalidationNote()})");
         _ = _backDoor.GetDatabase().StringSetAsync(key, value);
     }
 
-    /// <summary>Expire the selected key from the other connection: expiry is NOT announced.</summary>
+    /// <summary>Expire the selected key from the other connection: announced only once the server notices the expiry, and not at all in None mode.</summary>
     public void ExpireSelected()
     {
         var key = _keys[Selected];
         Mark("X");
-        Log($"back door: EXPIRE {key} 1  (expiry is not announced; the cached copy lives until TimeToLive)");
+        Log($"back door: EXPIRE {key} 1  (in 1s: {InvalidationNote(expiry: true)})");
         _ = _backDoor.GetDatabase().KeyExpireAsync(key, TimeSpan.FromSeconds(1));
     }
 
@@ -180,7 +265,7 @@ sealed partial class CacheEngine : IAsyncDisposable
         var db = _db;
         if (db is null) return;
         Mark("N");
-        Log("25 one-off reads of fresh keys: watch Count/Stored - first-miss admission stores them all, the doorkeeper stores none");
+        Log("25 one-off reads of fresh in-prefix keys: watch Count/Stored - OnFirstMiss (and by-prefix's implicit CacheOptIn) store all 25; OnRepeatedMiss stores none");
         _ = Task.Run(async () =>
         {
             for (int i = 0; i < 25; i++)
@@ -217,7 +302,7 @@ sealed partial class CacheEngine : IAsyncDisposable
     public void FlushDb()
     {
         Mark("F");
-        Log("back door: FLUSHDB  (the app's whole cache is discarded; keys are gone until re-seeded)");
+        Log($"back door: FLUSHDB  ({InvalidationNote(flush: true)}; keys are gone until re-seeded)");
         _ = _server.FlushDatabaseAsync();
     }
 
@@ -240,10 +325,10 @@ sealed partial class CacheEngine : IAsyncDisposable
             var cache = _app?.GetClientCache();
             var view = cache is null
                 ? new CacheView(false, "none", "n/a", 0, 0, 0, 0, 0, 0, 0, 0, 0, _reads, _serverGets - _serverGetsAtStart)
-                : new CacheView(true, cache.EffectiveTrackingMode.ToString(), (cache.Options.Admission == CacheAdmission.Default ? "OnRepeatedMiss (Default)" : cache.Options.Admission.ToString()), cache.Count, cache.Bytes, cache.Stored, cache.Evicted, cache.Promoted,
+                : new CacheView(true, cache.EffectiveTrackingMode.ToString(), cache.Options.Admission.ToString(), cache.Count, cache.Bytes, cache.Stored, cache.Evicted, cache.Promoted,
                     cache.Expired, cache.Refreshes, cache.ServedStale, cache.TrackedKeys, _reads, _serverGets - _serverGetsAtStart);
             var last = _windowCount > 0 ? windows[^1] : default;
-            return new Snapshot(windows, keys, view, _log.ToArray(), Profile, Bypass, Paused, last.Reads, last.ServerReads);
+            return new Snapshot(windows, keys, view, _log.ToArray(), Profile, Tracking, _keyspaceEvents, Bypass, Paused, last.Reads, last.ServerReads);
         }
     }
 
@@ -314,12 +399,29 @@ sealed partial class CacheEngine : IAsyncDisposable
             {
                 var values = await _backDoor.GetDatabase().StringGetAsync(keys);
                 long gets = await ReadServerGetsAsync();
+                List<(int, TimeSpan)>? recovered = null;
                 lock (_sync)
                 {
-                    for (int i = 0; i < KeyCount; i++) _serverValues[i] = values[i].IsNull ? null : values[i].ToString();
+                    long now = Stopwatch.GetTimestamp();
+                    for (int i = 0; i < KeyCount; i++)
+                    {
+                        _serverValues[i] = values[i].IsNull ? null : values[i].ToString();
+                        // how long each row stays out of sync is the cost of the chosen tracking mode, so say it
+                        if (_keyReads[i] == 0) continue; // not read yet: nothing to be stale
+                        if (_cached[i] != _serverValues[i]) { if (_staleSince[i] == 0) _staleSince[i] = now; }
+                        else if (_staleSince[i] != 0)
+                        {
+                            (recovered ??= []).Add((i, Stopwatch.GetElapsedTime(_staleSince[i], now)));
+                            _staleSince[i] = 0;
+                        }
+                    }
                     _serverGets = gets;
                 }
                 CloseWindow();
+                if (recovered is not null)
+                {
+                    foreach (var (i, span) in recovered) Log($"{_keys[i]} was stale for ~{span.TotalSeconds:0.0}s (probed every 250ms)");
+                }
             }
             catch (Exception ex)
             {
@@ -327,6 +429,12 @@ sealed partial class CacheEngine : IAsyncDisposable
             }
             try { await Task.Delay(250, token); } catch (OperationCanceledException) { break; }
         }
+    }
+
+    private async Task<string> ReadKeyspaceEventsAsync()
+    {
+        var pairs = await _server.ConfigGetAsync("notify-keyspace-events");
+        return pairs.Length == 0 ? "" : pairs[0].Value;
     }
 
     private async Task<long> ReadServerGetsAsync()
@@ -357,18 +465,30 @@ sealed partial class CacheEngine : IAsyncDisposable
 
     private void Log(string text)
     {
+        var cache = _app?.GetClientCache();
+        string counters = cache is null ? "" : $"  [Count={cache.Count} Stored={cache.Stored} Expired={cache.Expired} ServedStale={cache.ServedStale} TrackedKeys={cache.TrackedKeys}]";
         lock (_sync)
         {
-            _log.Enqueue(new LogLine(DateTime.Now, text));
+            var now = DateTime.Now;
+            _log.Enqueue(new LogLine(now, text));
             while (_log.Count > 14) _log.Dequeue();
+            _transcript.Add($"{now:HH:mm:ss.fff} {text}{counters}");
         }
     }
+
+    /// <summary>Every event so far, each with the cache counters as they stood: the scripted tour prints this on exit.</summary>
+    public string[] Transcript { get { lock (_sync) { return _transcript.ToArray(); } } }
 
     public async ValueTask DisposeAsync()
     {
         _stop.Cancel();
         await Task.WhenAll(_reader, _probe).WaitAsync(TimeSpan.FromSeconds(5)).ContinueWith(_ => { });
         if (_app is not null) await _app.DisposeAsync();
+        if (_keyspaceEvents != _keyspaceEventsAtStart)
+        {
+            // 'K' changes the container's live config; put it back the way we found it
+            try { await _server.ConfigSetAsync("notify-keyspace-events", _keyspaceEventsAtStart); } catch { }
+        }
         await _backDoor.DisposeAsync();
     }
 }

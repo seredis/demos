@@ -16,7 +16,7 @@ static class Ui
     private static readonly Color Stale = Color.Red;
     private static readonly string[] Bars = ["▁", "▂", "▃", "▄", "▅", "▆", "▇", "█"];
 
-    private const int FooterRows = 1, StripRows = 7, FullHeaderRows = 9, CompactHeaderRows = 2, MinMiddleRows = 12, MinLogRows = 5;
+    private const int FooterRows = 2, StripRows = 7, FullHeaderRows = 9, CompactHeaderRows = 2, MinMiddleRows = 12, MinLogRows = 5;
     private static int _logLines = 10;
 
     public static Layout Build(int height, out bool compact)
@@ -60,8 +60,10 @@ static class Ui
             ? new Markup($"[bold {color.ToMarkup()}]{text}[/]").Centered()
             : new FigletText(text).Color(color).Centered();
         var status = new Markup(
-            $"[bold]profile:[/] {Markup.Escape(s.Profile.Name)}   " +
-            $"[bold]tracking:[/] {Markup.Escape(s.Cache.Mode)}   " +
+            $"[bold]policy:[/] {Markup.Escape(s.Profile.Name)}   " +
+            $"[bold]tracking:[/] {Markup.Escape(s.Tracking.Name)} ({Markup.Escape(s.Cache.Mode)})   " +
+            $"[bold]admission:[/] {Markup.Escape(s.Cache.Admission)}   " +
+            $"[bold]notify-keyspace-events:[/] {(s.KeyspaceEvents.Length == 0 ? "off" : Markup.Escape(s.KeyspaceEvents))}   " +
             $"[bold]last 250ms:[/] {s.LastWindowReads} reads, {s.LastWindowServerReads} reached the server" +
             (s.Bypass ? "   [bold]BYPASS (CacheOptOut)[/]" : "") +
             (s.Paused ? "   [bold]PAUSED[/]" : "")).Centered();
@@ -95,7 +97,7 @@ static class Ui
             new Markup(local.ToString()),
             new Markup(server.ToString()),
             new Markup(markers.ToString()),
-            new Markup($"[grey]rows: [{Local.ToMarkup()}]answered locally[/] / [{Server.ToMarkup()}]reached the server[/] / your actions (W write, X expire, I invalidate, A all, F flush, S seed, N one-offs, B bypass, C profile)   one column = 250ms, newest right[/]"));
+            new Markup($"[grey]rows: [{Local.ToMarkup()}]answered locally[/] / [{Server.ToMarkup()}]reached the server[/] / your actions (W write, X expire, I invalidate, A all, F flush, S seed, N one-offs, B bypass, C policy, T tracking, D admission, K keyspace-events)   one column = 250ms, newest right[/]"));
         return new Panel(body).Header(" where each read was answered ").Border(BoxBorder.Rounded).Expand();
     }
 
@@ -164,9 +166,10 @@ static class Ui
         }
         if (c.Enabled)
         {
-            grid.AddRow("[grey]tracking mode[/]", Markup.Escape(c.Mode));
-            grid.AddRow("[grey]admission[/]", Markup.Escape(c.Admission));
+            grid.AddRow("[grey]EffectiveTrackingMode[/]", Markup.Escape(c.Mode));
+            grid.AddRow("[grey]Options.Admission[/]", Markup.Escape(c.Admission));
         }
+        grid.AddRow("[grey]server notify-keyspace-events[/]", s.KeyspaceEvents.Length == 0 ? "[grey]\"\" (off)[/]" : Markup.Escape(s.KeyspaceEvents));
         grid.AddEmptyRow();
         grid.AddRow("[bold]hit rate[/]", "");
         grid.AddRow("[grey]reads the app issued (client count)[/]", c.Reads.ToString("N0"));
@@ -174,7 +177,8 @@ static class Ui
         long localReads = Math.Max(0, c.Reads - c.ServerReads);
         grid.AddRow($"[grey]answered locally (the difference)[/]", $"[{Local.ToMarkup()}]{localReads:N0}[/]" + (c.Reads > 0 ? $"  ({100.0 * localReads / c.Reads:0.0}%)" : ""));
         grid.AddEmptyRow();
-        grid.AddRow("[grey]" + Markup.Escape(s.Profile.Summary) + "[/]", "");
+        grid.AddRow("[grey]" + Markup.Escape($"policy [{s.Profile.Name}]: {s.Profile.Summary}") + "[/]", "");
+        if (c.Enabled) grid.AddRow("[grey]" + Markup.Escape($"tracking [{s.Tracking.Name}]: {s.Tracking.Summary}") + "[/]", "");
         return new Panel(grid).Header(" counters ").Border(BoxBorder.Rounded).Expand();
     }
 
@@ -186,9 +190,10 @@ static class Ui
     }
 
     private static IRenderable Footer(Snapshot s)
-        => new Markup(
-            "[bold]↑↓[/] select  [bold]W[/] write behind back  [bold]X[/] expire 1s  [bold]I[/] Invalidate(key)  [bold]A[/] InvalidateAll  " +
-            "[bold]F[/] FLUSHDB  [bold]S[/] re-seed  [bold]N[/] one-off reads  [bold]B[/] bypass  [bold]C[/] next profile  [bold]P[/] pause  [bold]Q[/] quit");
+        => new Rows(
+            new Markup("[bold]↑↓[/] select  [bold]W[/] write behind back  [bold]X[/] expire 1s  [bold]I[/] Invalidate(key)  [bold]A[/] InvalidateAll  " +
+                       "[bold]F[/] FLUSHDB  [bold]S[/] re-seed  [bold]N[/] one-off reads  [bold]B[/] bypass  [bold]P[/] pause  [bold]Q[/] quit"),
+            new Markup("[bold]C[/] next policy  [bold]T[/] next tracking mode  [bold]D[/] toggle admission  [bold]K[/] toggle server notify-keyspace-events   (C, T and D reconnect)"));
 
     private static int SafeWidth()
     {

@@ -2,9 +2,14 @@
 //
 // One Redis container (see docker-compose.yml). The "app" connection has client-side caching on and
 // reads a small catalogue continuously; a second "back door" connection writes, expires and flushes
-// behind its back, so you can watch the server's invalidations arrive, and watch the two cases the
-// server cannot announce (expiry, and a value you simply know is wrong) until the cache's TimeToLive
-// or a manual Invalidate() catches them.
+// behind its back, so you can watch the server's invalidations arrive, and watch what happens when
+// nothing announces a change (no tracking, keyspace events off, or a value you simply know is wrong)
+// until the cache's TimeToLive or a manual Invalidate() catches it.
+//
+// Three cache settings can be varied independently, each a reconnect: the policy (C), the tracking
+// mode (T: by-prefix, tracking, broadcast, keyspace notifications, none) and the admission rule (D:
+// store on first miss, or only on a repeated miss). K flips the server's notify-keyspace-events, which
+// is what the keyspace mode lives on.
 //
 // Hit rate is measured on the server (INFO commandstats): a read answered locally never reaches it.
 //
@@ -96,6 +101,8 @@ if (scripted)
     var marks = string.Concat(final.Windows.Select(w => w.Marker ?? "."));
     Console.WriteLine($"local/10: {pct}");
     Console.WriteLine($"actions:  {marks}");
+    Console.WriteLine();
+    foreach (var line in engine.Transcript) Console.WriteLine(line);
 }
 return 0;
 
@@ -114,6 +121,9 @@ void HandleKey(ConsoleKey key)
         case ConsoleKey.N: engine.OneOffBurst(); break;
         case ConsoleKey.B: engine.ToggleBypass(); break;
         case ConsoleKey.C: engine.CycleProfile(); break;
+        case ConsoleKey.T: engine.CycleTracking(); break;
+        case ConsoleKey.D: engine.ToggleAdmission(); break;
+        case ConsoleKey.K: engine.ToggleKeyspaceEvents(); break;
         case ConsoleKey.P: engine.TogglePause(); break;
         case ConsoleKey.Q or ConsoleKey.Escape: quit.Cancel(); break;
     }
@@ -125,7 +135,7 @@ async Task RunScriptAsync()
     {
         await Wait(4);                       // warm up: every key cached after its first read
         engine.WriteSelected(); await Wait(3); // server pushes an invalidation; one miss, then cached again
-        engine.ExpireSelected(); await Wait(7); // not announced: stale until TimeToLive (5s) retires it
+        engine.ExpireSelected(); await Wait(7); // announced once the server's expire cycle notices it; the nil is then cached until re-seeded
         engine.RestoreMissing(); await Wait(3);
         engine.InvalidateSelected(); await Wait(2);
         engine.OneOffBurst(); await Wait(3);      // prefix profile: 25 more entries
@@ -134,6 +144,26 @@ async Task RunScriptAsync()
         engine.InvalidateAll(); await Wait(3);
         engine.FlushDb(); await Wait(3);       // whole cache discarded
         engine.RestoreMissing(); await Wait(3);
+
+        // admission: only visible without the prefix's implicit opt-in, so switch to Tracking mode
+        engine.CycleTracking(); await Wait(4);   // by-prefix -> tracking (OnRepeatedMiss)
+        engine.OneOffBurst(); await Wait(3);     // 25 one-offs: none stored
+        engine.ToggleAdmission(); await Wait(4); // OnFirstMiss
+        engine.OneOffBurst(); await Wait(3);     // 25 one-offs: all stored
+        engine.ToggleAdmission(); await Wait(1); // back to the default
+
+        // invalidation: broadcast, then keyspace notifications instead of CLIENT TRACKING, then nothing
+        engine.CycleTracking(); await Wait(3);   // broadcast
+        engine.WriteSelected(); await Wait(2);   // heard, as under tracking
+        engine.CycleTracking(); await Wait(3);   // keyspace, with notify-keyspace-events off
+        engine.WriteSelected(); await Wait(7);   // not heard: stale until TimeToLive
+        engine.ToggleKeyspaceEvents(); await Wait(1);
+        engine.WriteSelected(); await Wait(3);   // heard: one miss, then cached again
+        engine.ExpireSelected(); await Wait(3);  // heard too, unlike under CLIENT TRACKING
+        engine.RestoreMissing(); await Wait(2);
+        engine.ToggleKeyspaceEvents();           // leave the server as we found it
+        engine.CycleTracking(); await Wait(3);   // none
+        engine.WriteSelected(); await Wait(7);   // never heard: stale until TimeToLive
     }
     catch (OperationCanceledException) { }
     finally { quit.Cancel(); }
