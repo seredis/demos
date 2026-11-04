@@ -1,0 +1,23 @@
+{
+  "faultInjector": "http://127.0.0.1:20324",
+  "clusterIndex": 0,
+  "databases": [
+    {
+      "name": "hitless-standalone",
+      "endpoint": "redis-12000.c1.example.env0.qa.redislabs.com:12000",
+      "user": "default",
+      "password": "...",
+      "tls": false,
+      "trustAnyCertificate": false,
+      "bdbId": 1
+    },
+    {
+      "name": "hitless-cluster",
+      "endpoint": "redis-12001.c1.example.env0.qa.redislabs.com:12001",
+      "user": "default",
+      "password": "...",
+      "tls": false,
+      "bdbId": 2
+    }
+  ]
+}
