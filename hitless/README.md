@@ -74,9 +74,20 @@ dotnet run                                              # hitless.local.json in 
 
 `--mode Disabled` starts with notifications off, for a before-and-after. `--no-fault-injector` keeps the
 fault keys to their by-hand text. `--transcript` prints every event, including the library's full connection
-log, on exit. The same settings can come from `HITLESS_ENDPOINTS`, `HITLESS_ENDPOINT`, `HITLESS_PASSWORD`,
-`HITLESS_USER`, `HITLESS_TLS`, `HITLESS_BDB` and `HITLESS_FAULT_INJECTOR`. Nothing with a password in it
-is under version control.
+log, on exit. Nothing with a password in it is under version control.
+
+The same settings can come from the environment, so a shell profile can hold them: `HITLESS_ENDPOINTS`
+(a leading `~/` is expanded), `HITLESS_FAULT_INJECTOR`, `HITLESS_MODE`, or for a single database
+`HITLESS_ENDPOINT`, `HITLESS_PASSWORD`, `HITLESS_USER`, `HITLESS_TLS`, `HITLESS_BDB`.
+
+```bash
+export HITLESS_ENDPOINTS=~/aws/endpoints.json   # then plain `dotnet run` from this folder
+```
+
+Hands-free, for a scripted run or a smoke test: `--fire M --fire-after 8 --quit-after 80` presses one fault
+key after a delay and exits later, so with `--transcript` the whole episode lands in a log. To run against a
+local build of the library rather than the NuGet package:
+`dotnet run -p:SERProject=/path/to/StackExchange.Redis.csproj`.
 
 Use a wide terminal with a large font; the layout adapts to the height.
 

@@ -190,7 +190,7 @@ sealed partial class HandoffEngine : IAsyncDisposable
             _db = Retry ? _plainDb.WithRetry() : _plainDb;
             lock (_sync) { _connectError = null; }
             var servers = muxer.GetServers();
-            Log(LogKind.Info, $"connected: {servers.Length} server{(servers.Length == 1 ? "" : "s")} ({string.Join(", ", servers.Select(s => $"{s.EndPoint} {s.ServerType}"))})");
+            Log(LogKind.Info, $"connected: {servers.Length} server{(servers.Length == 1 ? "" : "s")} ({string.Join(", ", servers.Select(s => $"{Format(s.EndPoint)} {s.ServerType}"))})");
             if (old is not null) await old.DisposeAsync();
         }
         finally { _reconnect.Release(); }
@@ -341,7 +341,7 @@ sealed partial class HandoffEngine : IAsyncDisposable
         if (p.NewEndPoint is not null) sb.Append($"  successor {Format(p.NewEndPoint)}");
         else if (type == MaintenanceNotificationType.Moving) sb.Append("  successor not named ('_')");
         if (p.SlotMigrations.Count > 0) sb.Append("  ").Append(string.Join("; ", p.SlotMigrations.Select(m => $"slots {m.RawSlots}: {Format(m.Source)} -> {Format(m.Target)}")));
-        else if (p.Payload is not null) sb.Append($"  shards {p.Payload}");
+        else if (p.Payload is not null && type is not MaintenanceNotificationType.Moving) sb.Append($"  shards {p.Payload}"); // for MOVING the payload is the successor, already shown
         sb.Append($"  (heard from {Format(p.EndPoint)})");
         Log(LogKind.Notification, sb.ToString());
 

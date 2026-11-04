@@ -31,6 +31,7 @@ catch (ArgumentException ex)
     Console.Error.WriteLine("Usage: dotnet run -- [--endpoints <endpoints.json>] [--settings <hitless.local.json>]");
     Console.Error.WriteLine("                     [--endpoint host:port [--password P] [--user U] [--tls | --tls-insecure] [--name N] [--bdb ID]]");
     Console.Error.WriteLine("                     [--fault-injector http://127.0.0.1:20324 | --no-fault-injector] [--cluster-index N] [--mode Auto|Enabled|Disabled]");
+    Console.Error.WriteLine("                     [--fire M|G|F|A|X [--fire-after SECONDS]] [--quit-after SECONDS] [--transcript]");
     Console.Error.WriteLine("Environment: HITLESS_ENDPOINTS, HITLESS_ENDPOINT, HITLESS_PASSWORD, HITLESS_USER, HITLESS_TLS, HITLESS_BDB, HITLESS_FAULT_INJECTOR");
     return 2;
 }
@@ -50,6 +51,17 @@ catch (Exception ex)
 
 var quit = new CancellationTokenSource();
 Console.CancelKeyPress += (_, e) => { e.Cancel = true; quit.Cancel(); };
+
+// hands-free: --fire <key> presses one fault key after --fire-after seconds; --quit-after ends the run
+if (settings.Fire is { } fireKey)
+{
+    _ = Task.Run(async () =>
+    {
+        try { await Task.Delay(TimeSpan.FromSeconds(settings.FireAfter), quit.Token); } catch (OperationCanceledException) { return; }
+        HandleKey(fireKey);
+    });
+}
+if (settings.QuitAfter is { } quitAfter) quit.CancelAfter(TimeSpan.FromSeconds(quitAfter));
 
 int height = AnsiConsole.Profile.Height, width = AnsiConsole.Profile.Width;
 var layout = Ui.Build(height, out bool compact);

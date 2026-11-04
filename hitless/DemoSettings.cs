@@ -10,7 +10,8 @@ sealed record DatabaseTarget(string Name, string Endpoint, string? User, string?
 /// Enterprise cluster (or Redis Cloud database) with the maintenance-notification flags on is required,
 /// and the fault injector is optional - without it the fault keys show the rladmin command to run by hand.
 /// </summary>
-sealed record DemoSettings(IReadOnlyList<DatabaseTarget> Databases, Uri? FaultInjector, int ClusterIndex, string? InitialMode)
+sealed record DemoSettings(IReadOnlyList<DatabaseTarget> Databases, Uri? FaultInjector, int ClusterIndex, string? InitialMode,
+    ConsoleKey? Fire, int FireAfter, int? QuitAfter)
 {
     public const string LocalFile = "hitless.local.json";
     private static readonly Uri DefaultFaultInjector = new("http://127.0.0.1:20324");
@@ -24,9 +25,11 @@ sealed record DemoSettings(IReadOnlyList<DatabaseTarget> Databases, Uri? FaultIn
     {
         string? endpointsFile = Env("HITLESS_ENDPOINTS"), settingsFile = null, single = Env("HITLESS_ENDPOINT"),
             password = Env("HITLESS_PASSWORD"), user = Env("HITLESS_USER"), name = null, injector = Env("HITLESS_FAULT_INJECTOR"), bdb = Env("HITLESS_BDB"),
-            mode = null;
+            mode = Env("HITLESS_MODE");
         bool tls = Env("HITLESS_TLS") is "1" or "true", trustAny = false, noInjector = false;
-        int clusterIndex = 0;
+        int clusterIndex = 0, fireAfter = 10;
+        int? quitAfter = null;
+        ConsoleKey? fire = null;
 
         for (int i = 0; i < args.Length; i++)
         {
@@ -46,6 +49,10 @@ sealed record DemoSettings(IReadOnlyList<DatabaseTarget> Databases, Uri? FaultIn
                 case "--no-fault-injector": noInjector = true; break;
                 case "--cluster-index": clusterIndex = int.Parse(Next()); break;
                 case "--mode": mode = Next(); break; // Auto, Enabled or Disabled to start in
+                // hands-free: press one fault key after a delay, and quit after a while (for a scripted run or a smoke test)
+                case "--fire": fire = Enum.Parse<ConsoleKey>(Next().ToUpperInvariant()); break;
+                case "--fire-after": fireAfter = int.Parse(Next()); break;
+                case "--quit-after": quitAfter = int.Parse(Next()); break;
                 default: throw new ArgumentException($"unknown argument {args[i]}");
             }
         }
@@ -78,10 +85,17 @@ sealed record DemoSettings(IReadOnlyList<DatabaseTarget> Databases, Uri? FaultIn
         {
             throw new ArgumentException($"--mode must be one of {string.Join(", ", HandoffEngine.Modes.Select(m => m.Name))}");
         }
-        return new DemoSettings(databases, injectorUri, clusterIndex, mode);
+        return new DemoSettings(databases, injectorUri, clusterIndex, mode, fire, fireAfter, quitAfter);
     }
 
-    private static string? Env(string name) => Environment.GetEnvironmentVariable(name) is { Length: > 0 } v ? v : null;
+    /// <summary>A leading "~/" is expanded, so HITLESS_ENDPOINTS=~/aws/endpoints.json works from a shell profile.</summary>
+    private static string? Env(string name)
+    {
+        var value = Environment.GetEnvironmentVariable(name);
+        if (string.IsNullOrEmpty(value)) return null;
+        if (value.StartsWith("~/", StringComparison.Ordinal)) value = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), value[2..]);
+        return value;
+    }
 
     /// <summary>The fault injector's endpoints.json: one object per database, keyed by name.</summary>
     private static IEnumerable<DatabaseTarget> FromFaultInjectorEndpoints(string path, bool trustAny)

@@ -11,8 +11,10 @@
 
   <ItemGroup>
     <PackageReference Include="Spectre.Console" Version="0.57.2" />
-    <!-- maintenance notifications (smart client handoffs) shipped in 3.3.0; this is the current 3.x release -->
-    <PackageReference Include="StackExchange.Redis" Version="3.4.31" />
+    <!-- maintenance notifications (smart client handoffs) shipped in 3.3.0; this is the current 3.x release.
+         To run against a local build of the library instead: dotnet run -p:SERProject=/path/to/StackExchange.Redis.csproj -->
+    <PackageReference Include="StackExchange.Redis" Version="3.4.31" Condition="'$(SERProject)' == ''" />
+    <ProjectReference Include="$(SERProject)" Condition="'$(SERProject)' != ''" />
   </ItemGroup>
 
 </Project>
