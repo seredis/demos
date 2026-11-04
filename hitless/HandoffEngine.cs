@@ -33,16 +33,30 @@ sealed class Episode
     public DateTime Started, LastActivity;
     public DateTime? FirstNotification, Handoff, Restored, SocketClosed;
     public string? FirstNotificationType;
+    public readonly List<(string Type, DateTime At)> Notifications = new();
     public int Errors;
     public double MaxMs;
     public bool Closed;
 
-    public Episode Clone() => (Episode)MemberwiseClone();
+    /// <summary>A copy for the UI to read while this instance keeps changing (MemberwiseClone would share the list).</summary>
+    public Episode Clone()
+    {
+        var copy = new Episode
+        {
+            Trigger = Trigger, Started = Started, LastActivity = LastActivity, FirstNotification = FirstNotification, Handoff = Handoff,
+            Restored = Restored, SocketClosed = SocketClosed, FirstNotificationType = FirstNotificationType, Errors = Errors, MaxMs = MaxMs, Closed = Closed,
+        };
+        lock (Notifications) copy.Notifications.AddRange(Notifications);
+        return copy;
+    }
 
     public string Summary()
     {
         var sb = new StringBuilder(Trigger).Append(" at ").Append(Started.ToString("HH:mm:ss"));
-        if (FirstNotification is { } n && FirstNotificationType is not null) sb.Append($"; {FirstNotificationType} {Rel(n)}");
+        (string Type, DateTime At)[] notifications;
+        lock (Notifications) notifications = Notifications.ToArray();
+        foreach (var (type, at) in notifications.Take(6)) sb.Append($"; {type} {Rel(at)}");
+        if (notifications.Length > 6) sb.Append($"; +{notifications.Length - 6} more");
         if (Handoff is { } h) sb.Append($"; handoff {Rel(h)}");
         if (SocketClosed is { } c) sb.Append($"; socket closed by server {Rel(c)}");
         if (Restored is { } r) sb.Append($"; restored {Rel(r)}");
@@ -370,6 +384,7 @@ sealed partial class HandoffEngine : IAsyncDisposable
             }
             var ep = EnsureEpisode(Wire(type), now);
             if (ep.FirstNotification is null) { ep.FirstNotification = now; ep.FirstNotificationType = Wire(type); }
+            lock (ep.Notifications) ep.Notifications.Add((Wire(type), now));
         }
     }
 
