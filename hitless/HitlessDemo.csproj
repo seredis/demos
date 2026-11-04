@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>HitlessDemo</RootNamespace>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+
+  <!-- To run against a local build of the library instead of the NuGet package:
+         dotnet run -p:SERProject=~/ser/main/src/StackExchange.Redis/StackExchange.Redis.csproj
+       The shell does not expand ~ after "=" inside -p:, so it is expanded here; a path that does not exist
+       is an error rather than a silently empty reference. -->
+  <PropertyGroup Condition="'$(SERProject)' != ''">
+    <!-- a -p: property is global and cannot be reassigned, so the expanded form gets its own name -->
+    <SERProjectPath>$(SERProject)</SERProjectPath>
+    <SERProjectPath Condition="$(SERProject.StartsWith('~/'))">$(HOME)/$(SERProject.Substring(2))</SERProjectPath>
+  </PropertyGroup>
+  <Target Name="CheckSERProject" BeforeTargets="CollectPackageReferences;BeforeBuild" Condition="'$(SERProjectPath)' != '' And !Exists('$(SERProjectPath)')">
+    <Error Text="SERProject '$(SERProjectPath)' does not exist" />
+  </Target>
+
+  <ItemGroup>
+    <PackageReference Include="Spectre.Console" Version="0.57.2" />
+    <!-- maintenance notifications (smart client handoffs) shipped in 3.3.0; this is the current 3.x release -->
+    <PackageReference Include="StackExchange.Redis" Version="3.4.31" Condition="'$(SERProjectPath)' == ''" />
+    <ProjectReference Include="$(SERProjectPath)" Condition="'$(SERProjectPath)' != ''" />
+  </ItemGroup>
+
+</Project>
