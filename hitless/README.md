@@ -143,6 +143,28 @@ Keys:
 | `ServerDefault` | `_` (the bare opt-in, as earlier versions sent) | must re-resolve DNS, which has been measured trailing the notification by 4 to 19s against a 15s window, or recycle at half the window; on a bad run the socket is closed first |
 | `ExternalFqdn` / `ExternalIp` | that form explicitly | as `Auto`; the explicit forms exist for deployments where the automatic choice is wrong |
 
+## What to expect from each fault
+
+Measured on a 3-node Redis Enterprise 8.0.22 cluster with eight workers at about 450 operations a second.
+Timings are relative to pressing the key; the fault injector takes a few seconds to reach the cluster.
+
+| Key | Notifications `Disabled` | Notifications `Auto` |
+|---|---|---|
+| `M` endpoint rebind | nothing announced. The socket is closed at about +23s under live traffic: a red tick, `connection failed: SocketClosed`, a handful of failed operations (the in-flight ones plus anything issued during the few hundred milliseconds of reconnect) | `MOVING` at about +6s with a 15s grace and the successor address; the handoff follows within a second, `on proxy node` changes, traffic never stops. The server closes the old socket at about +23s with nothing on it. **0 failed** |
+| `G` migrate shards | no connection is dropped either way. Latency spikes to around a second while each shard moves; with the normal 5s timeout nothing fails | the same, plus `MIGRATING`/`MIGRATED` per shard and a relaxed-timeout window between them and for 20s after. The difference only shows when a move is slow enough to breach the normal timeout |
+| `F` failover | as `G`: a latency spike of about a second, no drop | `FAILING_OVER`/`FAILED_OVER`, about 7s apart, relaxed timeouts in between; 12s end to end |
+| `A` maintenance mode | the shard migration behaves as `G`. Whether the rebind at the end hits you depends on whether your proxy is on the node being drained; if it is, a silent close as under `M` at about +35s, otherwise nothing | `MIGRATING`, `MIGRATED`, `MOVING`, handoff: the whole chain with consecutive sequence numbers in one run, 45s. The `MOVING` only arrives if your proxy was on the drained node (compare the job output's `source_node` with `on proxy node`) |
+| `X` proxy restart | **identical in both modes**: the proxy is killed, nothing can be announced, the socket closes and the client reconnects blind | identical. This is the control: it shows the feature is the warning, not a cleverer reconnect. `R` turns the failures into a latency spike by replaying the failed operations |
+
+Two honest caveats for the stage. First, the harm of an unannounced close is bounded by the commands in
+flight plus the reconnect time, so with a few workers and a fast reconnect the `Disabled` column is a blip,
+not an outage; the story is announced versus unannounced, and it scales with connection count and reconnect
+cost (TLS, distance), not with anything this demo can add. Second, the client in 3.4.31 waited out the whole
+`MOVING` window before replacing the connection, so under `Auto` it recycled at about +21s and failed the
+commands in flight at that moment; the `0 failed` column above is with the fix in StackExchange.Redis
+[PR #3335](https://github.com/StackExchange/StackExchange.Redis/pull/3335), which you can run with
+`-p:SERProject=`. Use `M` for the before-and-after, since it always retires the proxy you are on.
+
 ## Things worth knowing
 
 - **A self-managed cluster is `Disabled` by default.** The client turns the feature on when the hostname
