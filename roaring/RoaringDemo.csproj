@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>RoaringDemo</RootNamespace>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- the ad-hoc pieces (OBJECT ENCODING, MEMORY USAGE, BITRANGEINTARRAY) use the v4 context
+         API; everything measured runs through the ordinary IDatabase bitmap methods -->
+    <PackageReference Include="StackExchange.Redis" Version="4.0.155-alpha" />
+  </ItemGroup>
+
+</Project>
