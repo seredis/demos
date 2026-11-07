@@ -83,12 +83,18 @@ AnsiConsole.Write(table);
 // per-key convergence: plain stays flat; the template run approaches values-only cost
 var plain50K = results.First(static r => r is { Keys: 50_000, Via: "HSET" });
 var import50K = results.First(static r => r is { Keys: 50_000, Via: "HIMPORT" });
+var plain100 = results.First(static r => r is { Keys: 100, Via: "HSET" });
+var import100 = results.First(static r => r is { Keys: 100, Via: "HIMPORT" });
 double saved = 1 - (double)import50K.UsedMemoryDelta / plain50K.UsedMemoryDelta;
+double savedPerKey100 = 1 - import100.MemoryUsageAvg / plain100.MemoryUsageAvg;
 AnsiConsole.MarkupLine($"""
 
     At 50,000 keys the shared schema saves [bold]{saved:P0}[/] of hash memory
     ({plain50K.UsedMemoryDelta / 1024.0 / 1024.0:0.0}MB → {import50K.UsedMemoryDelta / 1024.0 / 1024.0:0.0}MB): the field names exist once, not 50,000 times.
     MEMORY USAGE even charges each key its fair share of the template ({import50K.TemplateBytes / 1024.0:0.0}KB / {import50K.TemplateKeys:N0} keys).
+    The per-key win is already there at 100 keys ({plain100.MemoryUsageAvg:0} B → {import100.MemoryUsageAvg:0} B, [bold]{savedPerKey100:P0}[/]): the
+    template amortizes after a handful of keys. Only the used_memory Δ column needs scale - at 100
+    keys that reading drowns in allocator noise, a property of the measurement, not of the feature.
     Reads are unchanged: an imported key is an ordinary hash with a smarter encoding ({import50K.Encoding}).
     """);
 
@@ -106,6 +112,12 @@ if (!import50K.Encoding.StartsWith("template", StringComparison.Ordinal))
 if (import50K.UsedMemoryDelta >= plain50K.UsedMemoryDelta)
 {
     failures.Add("HIMPORT did not reduce memory at 50,000 keys");
+}
+// the honest per-key metric must show the win at small scale too: MEMORY USAGE includes the
+// key's template share, so this holds as soon as the 1.6KB template has a handful of keys
+if (import100.MemoryUsageAvg >= plain100.MemoryUsageAvg)
+{
+    failures.Add($"HIMPORT did not reduce per-key MEMORY USAGE at 100 keys ({plain100.MemoryUsageAvg:0} B -> {import100.MemoryUsageAvg:0} B)");
 }
 
 // an imported key is an ordinary hash: HGETALL round-trips the exact values (the last run's

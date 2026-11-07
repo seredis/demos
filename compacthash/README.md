@@ -28,9 +28,12 @@ Typical result:
 | 50,000 | `HIMPORT` | ~281k | **12.00MB** | **252 B** | `template-listpack` |
 
 — **43% less hash memory** (one 1.6KB template instead of 50,000 copies of the field names) *and*
-~2.5× the load throughput, since each import ships only values. At 100 keys the saving is nearly
-nil (the template has to amortize); the 100 / 5,000 / 50,000 sweep shows the convergence rather
-than asserting it. Reads are untouched: an imported key is an ordinary hash with a smarter
+~2.5× the load throughput, since each import ships only values. The per-key win is already there
+at 100 keys — `MEMORY USAGE` (which charges each key its fair share of the template) reads
+387 B → 225 B, the same ~42% as at 50,000 — because the template is only 1.6KB, amortized after a
+handful of keys. The `used_memory Δ` column only converges at the larger sizes: at 100 keys the
+~70KB signal drowns in allocator and dict-sizing noise, which is a property of that measurement,
+not of the feature. Reads are untouched: an imported key is an ordinary hash with a smarter
 encoding, and the run ends by asserting `HGETALL` round-trips the exact values.
 
 ## 1. Setup infrastructure
