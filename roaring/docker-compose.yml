@@ -1,0 +1,22 @@
+services:
+  redis-810:
+    image: redis:8.10.3
+    container_name: redis-810
+    ports:
+      - "16431:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 1s
+      timeout: 2s
+      retries: 15
+
+  redis-812:
+    build: .
+    container_name: redis-812
+    ports:
+      - "16432:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 1s
+      timeout: 2s
+      retries: 60
