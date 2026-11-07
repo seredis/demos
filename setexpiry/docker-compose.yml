@@ -1,0 +1,11 @@
+services:
+  redis-setexpiry:
+    build: .
+    container_name: redis-setexpiry
+    ports:
+      - "16441:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 1s
+      timeout: 2s
+      retries: 60
