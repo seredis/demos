@@ -1,0 +1,11 @@
+services:
+  redis-vectorsets:
+    image: redis:8.10.3
+    container_name: redis-vectorsets
+    ports:
+      - "16461:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 1s
+      timeout: 2s
+      retries: 15
