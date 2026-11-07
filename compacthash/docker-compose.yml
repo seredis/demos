@@ -1,0 +1,11 @@
+services:
+  redis-compacthash:
+    image: redis:8.10.3
+    container_name: redis-compacthash
+    ports:
+      - "16471:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 1s
+      timeout: 2s
+      retries: 15
