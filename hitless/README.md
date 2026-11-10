@@ -162,7 +162,7 @@ not an outage; the story is announced versus unannounced, and it scales with con
 cost (TLS, distance), not with anything this demo can add. Second, the client in 3.4.31 waited out the whole
 `MOVING` window before replacing the connection, so under `Auto` it recycled at about +21s and failed the
 commands in flight at that moment; the `0 failed` column above is with the fix in StackExchange.Redis
-[PR #3335](https://github.com/StackExchange/StackExchange.Redis/pull/3335), which you can run with
+[PR #3335](https://github.com/seredis/StackExchange.Redis/pull/3335), which you can run with
 `-p:SERProject=`. Use `M` for the before-and-after, since it always retires the proxy you are on.
 
 ## Things worth knowing

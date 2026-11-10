@@ -19,7 +19,7 @@ methods. Of the three new commands in the 8.12 command table, two are **internal
 propagation primitives that clients never send: `BITCONVERT` carries the string→roaring transition
 to replicas/AOF, and `BITROAROP` carries `BITOP`'s native result (the client keeps saying `BITOP`).
 The one user-facing addition is `BITRANGEINTARRAY` ("which bits are set in this range?"), which has
-a client PR in flight ([#3315](https://github.com/StackExchange/StackExchange.Redis/pull/3315),
+a client PR in flight ([#3315](https://github.com/seredis/StackExchange.Redis/pull/3315),
 `IDatabase.StringBitPositions`); until that ships, this demo sends it through the v4 ad-hoc context
 API — the machinery the [`extending/`](../extending/) demo covers at full length.
 

@@ -1,6 +1,6 @@
 # SE.Redis demos
 
-Self-contained, runnable demos for [StackExchange.Redis](https://github.com/StackExchange/StackExchange.Redis)
+Self-contained, runnable demos for [StackExchange.Redis](https://github.com/seredis/StackExchange.Redis)
 features. Each folder has its own README, its own `docker-compose.yml` for the Redis servers it
 needs, and pins the library version it targets, so demos can sit on different releases.
 

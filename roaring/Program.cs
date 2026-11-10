@@ -203,7 +203,7 @@ Act(6, "migrating a live key: flip the config, touch the key");
 Act(7, "the one new command: BITRANGEINTARRAY");
 // "Which bits are set in this range?" used to need a client-side scan of GETRANGE bytes or a
 // BITPOS loop; 8.12 answers it directly (BITRANGEINTARRAY key start end [BYTE|BIT] [LIMIT n]
-// [ZEROS]). The client API for it is PR stackexchange/StackExchange.Redis#3315
+// [ZEROS]). The client API for it is PR seredis/StackExchange.Redis#3315
 // (IDatabase.StringBitPositions); until that ships, the v4 ad-hoc surface sends it - see the
 // extending/ demo for that machinery at full length.
 {

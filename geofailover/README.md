@@ -1,7 +1,7 @@
 # Geo failover
 
 This repo provides docker-based infrastructure and two .NET demos showcasing geo failover/failback
-with the [SE.Redis](https://github.com/StackExchange/StackExchange.Redis) connection group API
+with the [SE.Redis](https://github.com/seredis/StackExchange.Redis) connection group API
 (`ConnectionMultiplexer.ConnectGroupAsync`):
 
 - [`console/`](console/): a scripted console run, a .NET port of the
