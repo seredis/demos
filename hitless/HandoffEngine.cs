@@ -73,7 +73,7 @@ sealed record Snapshot(
     NotificationChoice Mode, EndpointChoice EndpointType, bool Resp2, bool Retry, bool Paused,
     bool Connected, string? ConnectError, string OptIn, string RelaxedState, string RelaxedSettings,
     string InjectorStatus, FaultJob? Job, Episode? Current, Episode? Last,
-    long TotalOk, long TotalErrors, KeyValuePair<string, int>[] ErrorKinds);
+    long TotalOk, long TotalErrors, KeyValuePair<string, int>[] ErrorKinds, string Traffic);
 
 /// <summary>
 /// Drives one connection to a Redis Enterprise database with continuous traffic, reports every maintenance
@@ -82,7 +82,7 @@ sealed record Snapshot(
 /// </summary>
 sealed partial class HandoffEngine : IAsyncDisposable
 {
-    private const int Workers = 8;
+    private int Workers => _settings.Workers;
     private static readonly TimeSpan EpisodeQuiet = TimeSpan.FromSeconds(20);
 
     private readonly DemoSettings _settings;
@@ -164,7 +164,7 @@ sealed partial class HandoffEngine : IAsyncDisposable
         }
         await ApplyAsync();
         if (_app is null && _connectError is not null) throw new InvalidOperationException(_connectError);
-        _workers = Enumerable.Range(0, Workers).Select(w => Task.Run(() => WorkerLoopAsync(w))).ToArray();
+        _workers = _settings.Rate > 0 ? [Task.Run(PacerLoopAsync)] : Enumerable.Range(0, Workers).Select(w => Task.Run(() => WorkerLoopAsync(w))).ToArray();
         _ticker = Task.Run(TickerLoopAsync);
         _probe = Task.Run(ProbeLoopAsync);
     }
@@ -532,12 +532,13 @@ sealed partial class HandoffEngine : IAsyncDisposable
             }
             var o = _options;
             string settings = o is null ? "" :
-                $"maintRelaxedTimeout {o.MaintenanceRelaxedTimeout.TotalSeconds:0}s, maintRelaxedWindowMax {o.MaintenanceRelaxedWindowMax.TotalSeconds:0}s, maintPostEventRelaxed {o.MaintenancePostEventRelaxedDuration.TotalSeconds:0}s; normal timeout {(o.AsyncTimeout / 1000.0):0}s";
+                $"maintRelaxedTimeout {o.MaintenanceRelaxedTimeout.TotalSeconds:0}s, maintRelaxedWindowMax {o.MaintenanceRelaxedWindowMax.TotalSeconds:0}s, maintPostEventRelaxed {o.MaintenancePostEventRelaxedDuration.TotalSeconds:0}s; normal timeout {(o.AsyncTimeout >= 1000 ? $"{o.AsyncTimeout / 1000.0:0.#}s" : $"{o.AsyncTimeout}ms")}";
             return new Snapshot(windows, _log.ToArray(), Target, _settings.Databases.Count, _servers, _dns,
                 Mode, EndpointType, Resp2, Retry, Paused,
                 _app is not null, _connectError, _optIn, RelaxedState(now), settings,
                 _injectorStatus, _job, _episode is { Closed: false } ? _episode.Clone() : null, _lastEpisode?.Clone(),
-                Volatile.Read(ref _ok), Volatile.Read(ref _errors), _errorKinds.OrderByDescending(p => p.Value).ToArray());
+                Volatile.Read(ref _ok), Volatile.Read(ref _errors), _errorKinds.OrderByDescending(p => p.Value).ToArray(),
+                _settings.Rate > 0 ? $"{_settings.Rate:N0} ops/s open loop" : $"{Workers} worker{(Workers == 1 ? "" : "s")}");
         }
     }
 
@@ -571,6 +572,29 @@ sealed partial class HandoffEngine : IAsyncDisposable
             {
                 if (Paused) { await Task.Delay(100, token); continue; }
                 await OneOperationAsync(worker, sequence++, token);
+            }
+        }
+        catch (OperationCanceledException) { }
+    }
+
+    /// <summary>
+    /// Open-loop traffic: operations are issued at a fixed rate whether or not earlier ones have completed, as
+    /// requests arrive at a web server. The closed-loop workers stop issuing while they wait, so a stall costs
+    /// them one operation each; here it costs everything that arrives during the stall.
+    /// </summary>
+    private async Task PacerLoopAsync()
+    {
+        var token = _stop.Token;
+        long issued = 0;
+        var clock = Stopwatch.StartNew();
+        using var timer = new PeriodicTimer(TimeSpan.FromMilliseconds(5));
+        try
+        {
+            while (await timer.WaitForNextTickAsync(token))
+            {
+                long due = (long)(clock.Elapsed.TotalSeconds * _settings.Rate);
+                if (Paused) { issued = due; continue; }
+                while (issued < due) { _ = OneOperationAsync((int)(issued % 16), issued++, token); }
             }
         }
         catch (OperationCanceledException) { }

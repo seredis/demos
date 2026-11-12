@@ -97,7 +97,7 @@ static class Ui
             new Markup(latency.ToString()),
             new Markup(markers.ToString()),
             new Markup($"[grey]rows: [{Ok.ToMarkup()}]ops completed[/] / [{Bad.ToMarkup()}]ops failed (share of window)[/] / [{Latency.ToMarkup()}]worst latency (log, 1ms to 10s)[/] / your actions (letters)   one column = 250ms, newest right[/]"));
-        return new Panel(body).Header(" traffic: 8 workers, SET and GET alternating ").Border(BoxBorder.Rounded).Expand();
+        return new Panel(body).Header($" traffic: {Markup.Escape(s.Traffic)}, SET and GET alternating ").Border(BoxBorder.Rounded).Expand();
     }
 
     private static string Bar(int part, int whole)

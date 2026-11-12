@@ -11,7 +11,7 @@ sealed record DatabaseTarget(string Name, string Endpoint, string? User, string?
 /// and the fault injector is optional - without it the fault keys show the rladmin command to run by hand.
 /// </summary>
 sealed record DemoSettings(IReadOnlyList<DatabaseTarget> Databases, Uri? FaultInjector, int ClusterIndex, string? InitialMode,
-    ConsoleKey? Fire, int FireAfter, int? QuitAfter)
+    ConsoleKey? Fire, int FireAfter, int? QuitAfter, int Workers = 8, int TimeoutMs = 5000, int Rate = 0)
 {
     public const string LocalFile = "hitless.local.json";
     private static readonly Uri DefaultFaultInjector = new("http://127.0.0.1:20324");
@@ -27,7 +27,7 @@ sealed record DemoSettings(IReadOnlyList<DatabaseTarget> Databases, Uri? FaultIn
             password = Env("HITLESS_PASSWORD"), user = Env("HITLESS_USER"), name = null, injector = Env("HITLESS_FAULT_INJECTOR"), bdb = Env("HITLESS_BDB"),
             mode = Env("HITLESS_MODE");
         bool tls = Env("HITLESS_TLS") is "1" or "true", trustAny = false, noInjector = false;
-        int clusterIndex = 0, fireAfter = 10;
+        int clusterIndex = 0, fireAfter = 10, workers = 8, timeoutMs = 5000, rate = 0;
         int? quitAfter = null;
         ConsoleKey? fire = null;
 
@@ -53,6 +53,9 @@ sealed record DemoSettings(IReadOnlyList<DatabaseTarget> Databases, Uri? FaultIn
                 case "--fire": fire = Enum.Parse<ConsoleKey>(Next().ToUpperInvariant()); break;
                 case "--fire-after": fireAfter = int.Parse(Next()); break;
                 case "--quit-after": quitAfter = int.Parse(Next()); break;
+                case "--workers": workers = int.Parse(Next()); break; // concurrent callers
+                case "--rate": rate = int.Parse(Next()); break; // open loop: operations issued per second whether or not earlier ones have completed
+                case "--timeout": timeoutMs = int.Parse(Next()); break; // sync/async command timeout, ms
                 default: throw new ArgumentException($"unknown argument {args[i]}");
             }
         }
@@ -85,7 +88,7 @@ sealed record DemoSettings(IReadOnlyList<DatabaseTarget> Databases, Uri? FaultIn
         {
             throw new ArgumentException($"--mode must be one of {string.Join(", ", HandoffEngine.Modes.Select(m => m.Name))}");
         }
-        return new DemoSettings(databases, injectorUri, clusterIndex, mode, fire, fireAfter, quitAfter);
+        return new DemoSettings(databases, injectorUri, clusterIndex, mode, fire, fireAfter, quitAfter, workers, timeoutMs, rate);
     }
 
     /// <summary>A leading "~/" is expanded, so HITLESS_ENDPOINTS=~/aws/endpoints.json works from a shell profile.</summary>

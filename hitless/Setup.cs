@@ -48,8 +48,8 @@ sealed partial class HandoffEngine
             // a refused opt-in under Enabled should surface as an error we can show, not a silent retry loop
             AbortOnConnectFail = true,
             ConnectTimeout = 10_000,
-            SyncTimeout = 5_000,
-            AsyncTimeout = 5_000,
+            SyncTimeout = _settings.TimeoutMs,
+            AsyncTimeout = _settings.TimeoutMs,
             // RESP3 is the default; RESP2 is offered here only to show that it silently disables the feature
             Protocol = Resp2 ? RedisProtocol.Resp2 : RedisProtocol.Resp3,
 
