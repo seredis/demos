@@ -12,7 +12,7 @@
   <ItemGroup>
     <!-- the ad-hoc pieces (OBJECT ENCODING, MEMORY USAGE, BITRANGEINTARRAY) use the v4 context
          API; everything measured runs through the ordinary IDatabase bitmap methods -->
-    <PackageReference Include="StackExchange.Redis" Version="4.0.155-alpha" />
+    <PackageReference Include="StackExchange.Redis" VersionOverride="$(SERedisV4Version)" />
   </ItemGroup>
 
 </Project>

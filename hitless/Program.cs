@@ -1,4 +1,4 @@
-// Interactive smart-client-handoff (hitless upgrade) demo for SE.Redis 3.4.
+// Interactive smart-client-handoff (hitless upgrade) demo for SE.Redis 3.4 (3.4.35 or later for the prompt MOVING handoff).
 //
 // Bring your own server: a Redis Enterprise database with the cluster's client_maint_notifications flag
 // on (see README). One connection carries continuous SET/GET traffic; the server is then put through the

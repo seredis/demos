@@ -10,9 +10,9 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Spectre.Console" Version="0.57.2" />
+    <PackageReference Include="Spectre.Console" />
     <!-- HOTKEYS (Redis 8.6) has first-class support on IServer since the 3.x line -->
-    <PackageReference Include="StackExchange.Redis" Version="3.4.29" />
+    <PackageReference Include="StackExchange.Redis" />
   </ItemGroup>
 
 </Project>

@@ -10,10 +10,10 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Spectre.Console" Version="0.57.2" />
+    <PackageReference Include="Spectre.Console" />
     <!-- the SEXPIRE family has no client API yet, so SetExpiry.cs drives it entirely through the
          v4 context surface; v4 is in alpha -->
-    <PackageReference Include="StackExchange.Redis" Version="4.0.155-alpha" />
+    <PackageReference Include="StackExchange.Redis" VersionOverride="$(SERedisV4Version)" />
   </ItemGroup>
 
 </Project>

@@ -11,7 +11,7 @@
 
   <ItemGroup>
     <!-- the context surface (db.Context, SendAsync, Compose, [Resp]) is a v4 feature; v4 is in alpha -->
-    <PackageReference Include="StackExchange.Redis" Version="4.0.155-alpha" />
+    <PackageReference Include="StackExchange.Redis" VersionOverride="$(SERedisV4Version)" />
   </ItemGroup>
 
 </Project>

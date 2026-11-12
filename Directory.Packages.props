@@ -1,0 +1,18 @@
+<Project>
+
+  <!-- Central package management: every demo takes its package versions from here.
+       StackExchange.Redis defaults to the current v3 release; a demo of a v4 feature opts in from
+       its own csproj with VersionOverride="$(SERedisV4Version)", so the alpha version is also
+       stated once, here. -->
+  <PropertyGroup>
+    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+    <SERedisV4Version>4.0.161-alpha</SERedisV4Version>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageVersion Include="Spectre.Console" Version="0.57.2" />
+    <!-- the current v3 release -->
+    <PackageVersion Include="StackExchange.Redis" Version="3.4.35" />
+  </ItemGroup>
+
+</Project>

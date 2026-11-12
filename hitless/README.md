@@ -31,7 +31,7 @@ What the cluster needs:
 
 | Requirement | Why |
 |---|---|
-| Redis Enterprise 7.4+ (measured here on 8.0.22) or Redis Cloud | the notifications are emitted by the DMC proxy |
+| Redis Enterprise 7.4+ (measured here on 8.0.22 and 8.6.2) or Redis Cloud | the notifications are emitted by the DMC proxy |
 | cluster flag `client_maint_notifications` on, for proxy-routed databases | with it off, `CLIENT MAINT_NOTIFICATIONS` does not exist and the opt-in is refused |
 | cluster flag `oss_cluster_client_maint_notifications` on, for `oss_cluster` databases | same, for the cluster-API routing path |
 | RESP3 | the frames are RESP3 pushes. The client negotiates it by default; `P` shows what happens without it |
@@ -145,7 +145,8 @@ Keys:
 
 ## What to expect from each fault
 
-Measured on a 3-node Redis Enterprise 8.0.22 cluster with eight workers at about 450 operations a second.
+Measured on a 3-node Redis Enterprise 8.0.22 cluster with eight workers at about 450 operations a second;
+the `M` row was re-measured on 8.6.2 with StackExchange.Redis 3.4.35.
 Timings are relative to pressing the key; the fault injector takes a few seconds to reach the cluster.
 
 | Key | Notifications `Disabled` | Notifications `Auto` |
@@ -159,11 +160,13 @@ Timings are relative to pressing the key; the fault injector takes a few seconds
 Two honest caveats for the stage. First, the harm of an unannounced close is bounded by the commands in
 flight plus the reconnect time, so with a few workers and a fast reconnect the `Disabled` column is a blip,
 not an outage; the story is announced versus unannounced, and it scales with connection count and reconnect
-cost (TLS, distance), not with anything this demo can add. Second, the client in 3.4.31 waited out the whole
-`MOVING` window before replacing the connection, so under `Auto` it recycled at about +21s and failed the
-commands in flight at that moment; the `0 failed` column above is with the fix in StackExchange.Redis
-[PR #3335](https://github.com/seredis/StackExchange.Redis/pull/3335), which you can run with
-`-p:SERProject=`. Use `M` for the before-and-after, since it always retires the proxy you are on.
+cost (TLS, distance), not with anything this demo can add. Second, the `0 failed` column needs
+StackExchange.Redis 3.4.35 or later, which this project references. Earlier versions (to 3.4.31) waited out
+the whole `MOVING` window before replacing the connection, so under `Auto` they recycled at about +21s and
+failed the commands in flight at that moment; the fix
+([PR #3347](https://github.com/seredis/StackExchange.Redis/pull/3347)) holds new work in the backlog while
+the in-flight commands drain, so the recycle happens within a round trip of the notification. Use `M` for
+the before-and-after, since it always retires the proxy you are on.
 
 ## Things worth knowing
 

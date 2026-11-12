@@ -23,9 +23,9 @@
   </Target>
 
   <ItemGroup>
-    <PackageReference Include="Spectre.Console" Version="0.57.2" />
-    <!-- maintenance notifications (smart client handoffs) shipped in 3.3.0; this is the current 3.x release -->
-    <PackageReference Include="StackExchange.Redis" Version="3.4.31" Condition="'$(SERProjectPath)' == ''" />
+    <PackageReference Include="Spectre.Console" />
+    <!-- maintenance notifications (smart client handoffs) shipped in 3.3.0; the prompt MOVING handoff needs 3.4.35 (version in Directory.Packages.props) -->
+    <PackageReference Include="StackExchange.Redis" Condition="'$(SERProjectPath)' == ''" />
     <ProjectReference Include="$(SERProjectPath)" Condition="'$(SERProjectPath)' != ''" />
   </ItemGroup>
 

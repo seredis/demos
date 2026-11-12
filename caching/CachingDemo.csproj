@@ -10,9 +10,9 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Spectre.Console" Version="0.57.2" />
-    <!-- client-side caching is a v4 feature; v4 is in alpha -->
-    <PackageReference Include="StackExchange.Redis" Version="4.0.155-alpha" />
+    <PackageReference Include="Spectre.Console" />
+    <!-- client-side caching is a v4 feature; v4 is in alpha; the version is SERedisV4Version in Directory.Packages.props -->
+    <PackageReference Include="StackExchange.Redis" VersionOverride="$(SERedisV4Version)" />
   </ItemGroup>
 
 </Project>

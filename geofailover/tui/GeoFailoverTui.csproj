@@ -10,8 +10,8 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Spectre.Console" Version="0.57.2" />
-    <PackageReference Include="StackExchange.Redis" Version="3.4.29" />
+    <PackageReference Include="Spectre.Console" />
+    <PackageReference Include="StackExchange.Redis" />
   </ItemGroup>
 
 </Project>

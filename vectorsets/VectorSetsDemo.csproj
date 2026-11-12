@@ -10,9 +10,9 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Spectre.Console" Version="0.57.2" />
+    <PackageReference Include="Spectre.Console" />
     <!-- vector sets (Redis 8.0) have first-class support on IDatabase since the 3.x line -->
-    <PackageReference Include="StackExchange.Redis" Version="3.4.29" />
+    <PackageReference Include="StackExchange.Redis" />
   </ItemGroup>
 
 </Project>
