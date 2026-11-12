@@ -1,4 +1,3 @@
-using SetExpiry;
 using StackExchange.Redis;
 
 namespace SetExpiryDemo;
@@ -15,8 +14,10 @@ namespace SetExpiryDemo;
 /// Everything observed comes from the server: membership and TTLs are polled (SMEMBERS + SPTTL),
 /// and the event log is fed by keyspace notifications - including 8.12's new subkey channels,
 /// where __subkeyevent@0__:sexpired names WHICH member expired.
+///
+/// This file is the plumbing; every command the demo issues lives in CoreUsage.cs.
 /// </summary>
-sealed class Engine : IAsyncDisposable
+sealed partial class Engine : IAsyncDisposable
 {
     private const string Endpoint = "localhost:16441";
     private const string NotifyFlags = "EsgT"; // E keyevent, s set class, g generic (del), T subkeyevent
@@ -99,9 +100,7 @@ sealed class Engine : IAsyncDisposable
         await sub.SubscribeAsync(RedisChannel.Literal("__keyevent@0__:del"), (_, _) =>
             Log("del: the set emptied, so the key itself is gone"));
 
-        // "host" joins with plain SADD: no TTL, never expires - the two kinds of member coexist
-        await _db.SetAddAsync(Key, "host");
-        Log("host joined via plain SADD: no TTL, pinned until removed");
+        await AddHostAsync(); // plain SADD: no TTL - the two kinds of member coexist
         Log($"notify-keyspace-events \"{NotifyFlags}\": keyevent + set + generic + subkeyevent channels");
 
         _ = Task.Run(() => BotLoopAsync(_stop.Token));
@@ -122,7 +121,7 @@ sealed class Engine : IAsyncDisposable
                     if (bot.Next <= now)
                     {
                         bot.Next = now + bot.Period + TimeSpan.FromMilliseconds(Random.Shared.Next(0, 1500));
-                        Fire(async () => await _db.SetExpiry().AddAsync(Key, [bot.Name], BotTtl));
+                        Fire(() => BotTouchAsync(bot.Name));
                     }
                 }
             }
@@ -136,22 +135,7 @@ sealed class Engine : IAsyncDisposable
         {
             try
             {
-                RedisValue[] members = await _db.SetMembersAsync(Key);
-                Array.Sort(members, static (x, y) => string.CompareOrdinal(x, y));
-                (string, long)[] rows;
-                if (members.Length == 0)
-                {
-                    rows = [];
-                }
-                else
-                {
-                    using var ttls = await _db.SetExpiry().TimeToLiveAsync(Key, members);
-                    rows = new (string, long)[members.Length];
-                    for (int i = 0; i < members.Length; i++)
-                    {
-                        rows[i] = (members[i].ToString(), i < ttls.Length ? ttls.Span[i] : -2);
-                    }
-                }
+                var rows = await ReadBoardAsync();
                 lock (_lock)
                 {
                     _rows = rows;
@@ -197,74 +181,37 @@ sealed class Engine : IAsyncDisposable
     public void AddGuest()
     {
         string name = $"guest-{Interlocked.Increment(ref _guests)}";
-        Fire(async () =>
-        {
-            bool changed = await _db.SetExpiry().AddAsync(Key, [name], GuestTtl);
-            Log($"SADDEX EX {GuestTtl.TotalSeconds:0} MEMBERS 1 {name} -> {(changed ? 1 : 0)}: joined with a {GuestTtl.TotalSeconds:0}s TTL");
-        });
+        Fire(() => JoinAsync(name));
     }
 
     public void TouchSelected()
     {
         if (SelectedName() is not { } name) return;
-        Fire(async () =>
-        {
-            await _db.SetExpiry().AddAsync(Key, [name], TouchTtl);
-            Log($"SADDEX EX {TouchTtl.TotalSeconds:0} MEMBERS 1 {name}: activity - present with a fresh {TouchTtl.TotalSeconds:0}s TTL either way");
-        });
+        Fire(() => TouchAsync(name));
     }
 
     public void LengthenSelected()
     {
         if (SelectedName() is not { } name) return;
-        Fire(async () =>
-        {
-            using var codes = await _db.SetExpiry().ExpireAsync(Key, LengthenTtl, [name], SetExpireWhen.GreaterThan);
-            long code = codes.Length > 0 ? codes.Span[0] : SetExpireReply.NoSuchMember;
-            Log($"SEXPIRE {LengthenTtl.TotalSeconds:0} GT MEMBERS 1 {name} -> [{code}]: {code switch
-            {
-                SetExpireReply.Applied => "lengthened",
-                SetExpireReply.ConditionNotMet => "GT not met - the current expiry is already later (or none)",
-                SetExpireReply.NoSuchMember => "no such member",
-                _ => "deleted (expiry already past)",
-            }}");
-        });
+        Fire(() => LengthenAsync(name));
     }
 
     public void PersistSelected()
     {
         if (SelectedName() is not { } name) return;
-        Fire(async () =>
-        {
-            using var codes = await _db.SetExpiry().PersistAsync(Key, [name]);
-            long code = codes.Length > 0 ? codes.Span[0] : -2;
-            Log($"SPERSIST MEMBERS 1 {name} -> [{code}]: {code switch
-            {
-                1 => "pinned - the member no longer expires",
-                -1 => "already had no expiry",
-                _ => "no such member",
-            }}");
-        });
+        Fire(() => PersistAsync(name));
     }
 
     public void ExpireSoonSelected()
     {
         if (SelectedName() is not { } name) return;
-        Fire(async () =>
-        {
-            using var codes = await _db.SetExpiry().ExpireAsync(Key, TimeSpan.FromSeconds(2), [name]);
-            Log($"SEXPIRE 2 MEMBERS 1 {name} -> [{(codes.Length > 0 ? codes.Span[0] : -2)}]: watch for sexpired...");
-        });
+        Fire(() => ExpireSoonAsync(name));
     }
 
     public void KickSelected()
     {
         if (SelectedName() is not { } name) return;
-        Fire(async () =>
-        {
-            bool removed = await _db.SetRemoveAsync(Key, name);
-            Log($"SREM {name} -> {(removed ? 1 : 0)} (the ordinary command; nothing about expiry changes SREM)");
-        });
+        Fire(() => KickAsync(name));
     }
 
     /// <summary>The MNX lesson: the condition is all-or-nothing across the batch.</summary>
@@ -272,12 +219,7 @@ sealed class Engine : IAsyncDisposable
     {
         if (SelectedName() is not { } name) return;
         string newcomer = $"newcomer-{Random.Shared.Next(100, 999)}";
-        Fire(async () =>
-        {
-            bool changed = await _db.SetExpiry().AddAsync(Key, [name, newcomer], GuestTtl, SetAddWhen.AllNew);
-            Log($"SADDEX MNX EX 20 MEMBERS 2 {name} {newcomer} -> {(changed ? 1 : 0)}: " +
-                (changed ? "all were new; added" : $"MNX is all-or-nothing: {name} already exists, so {newcomer} was NOT added either"));
-        });
+        Fire(() => AllNewAsync(name, newcomer));
     }
 
     public void ToggleBots()

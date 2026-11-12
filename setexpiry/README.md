@@ -17,7 +17,9 @@ v4 context API: [`SetExpiry.cs`](SetExpiry.cs) is the mini-library ([`Resp`]-dec
 `Compose` for the optional `MNX`/`MXX`/`NX`/`XX`/`GT`/`LT` tokens and `MEMBERS n ...` blocks, a
 span of members as one hole, `ReadOnlyLease<long>` replies). The [`extending/`](../extending/) demo
 explains that machinery at full length; this demo is it earning its keep on a genuinely new server
-feature.
+feature. [`CoreUsage.cs`](CoreUsage.cs) is the **complete** application-side usage — every
+`SADD`/`SADDEX`/`SEXPIRE`/`SPERSIST`/`SREM` call plus the `SMEMBERS` + `SPTTL` board read, one
+small method per command; everything else is plumbing.
 
 Things the demo surfaces, each observable on screen:
 
