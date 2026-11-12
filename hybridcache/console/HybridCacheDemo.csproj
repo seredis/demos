@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>HybridCacheDemo</RootNamespace>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- the push-invalidation HybridCache; client-side caching is a v4 feature, so the
+         client rides the alpha (SERedisV4Version in Directory.Packages.props) -->
+    <PackageReference Include="StackExchange.Redis.HybridCache" />
+    <PackageReference Include="StackExchange.Redis" VersionOverride="$(SERedisV4Version)" />
+
+    <!-- the stock stack, so both modes run in one process. Its StackExchange.Redis dependency
+         is a >= 2.7.27 floor, so the graph unifies onto the v4 alpha above - a combination
+         that has been verified working (stock RedisCache + DefaultHybridCache on v4) -->
+    <PackageReference Include="Microsoft.Extensions.Caching.Hybrid" />
+    <PackageReference Include="Microsoft.Extensions.Caching.StackExchangeRedis" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
+  </ItemGroup>
+
+</Project>

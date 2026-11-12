@@ -13,6 +13,13 @@
     <PackageVersion Include="Spectre.Console" Version="0.57.2" />
     <!-- the current v3 release -->
     <PackageVersion Include="StackExchange.Redis" Version="3.4.35" />
+
+    <!-- the hybridcache demo: our HybridCache implementation (alpha-only, so stated plainly),
+         and the stock Microsoft stack it is compared against -->
+    <PackageVersion Include="StackExchange.Redis.HybridCache" Version="0.1.29-alpha" />
+    <PackageVersion Include="Microsoft.Extensions.Caching.Hybrid" Version="10.11.0" />
+    <PackageVersion Include="Microsoft.Extensions.Caching.StackExchangeRedis" Version="10.0.13" />
+    <PackageVersion Include="Microsoft.Extensions.DependencyInjection" Version="10.0.13" />
   </ItemGroup>
 
 </Project>
