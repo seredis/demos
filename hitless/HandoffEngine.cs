@@ -73,7 +73,7 @@ sealed record Snapshot(
     NotificationChoice Mode, EndpointChoice EndpointType, bool Resp2, bool Retry, bool Paused,
     bool Connected, string? ConnectError, string OptIn, string RelaxedState, string RelaxedSettings,
     string InjectorStatus, FaultJob? Job, Episode? Current, Episode? Last,
-    long TotalOk, long TotalErrors, KeyValuePair<string, int>[] ErrorKinds);
+    long TotalOk, long TotalErrors, KeyValuePair<string, int>[] ErrorKinds, string Traffic);
 
 /// <summary>
 /// Drives one connection to a Redis Enterprise database with continuous traffic, reports every maintenance
@@ -532,12 +532,13 @@ sealed partial class HandoffEngine : IAsyncDisposable
             }
             var o = _options;
             string settings = o is null ? "" :
-                $"maintRelaxedTimeout {o.MaintenanceRelaxedTimeout.TotalSeconds:0}s, maintRelaxedWindowMax {o.MaintenanceRelaxedWindowMax.TotalSeconds:0}s, maintPostEventRelaxed {o.MaintenancePostEventRelaxedDuration.TotalSeconds:0}s; normal timeout {(o.AsyncTimeout / 1000.0):0}s";
+                $"maintRelaxedTimeout {o.MaintenanceRelaxedTimeout.TotalSeconds:0}s, maintRelaxedWindowMax {o.MaintenanceRelaxedWindowMax.TotalSeconds:0}s, maintPostEventRelaxed {o.MaintenancePostEventRelaxedDuration.TotalSeconds:0}s; normal timeout {(o.AsyncTimeout >= 1000 ? $"{o.AsyncTimeout / 1000.0:0.#}s" : $"{o.AsyncTimeout}ms")}";
             return new Snapshot(windows, _log.ToArray(), Target, _settings.Databases.Count, _servers, _dns,
                 Mode, EndpointType, Resp2, Retry, Paused,
                 _app is not null, _connectError, _optIn, RelaxedState(now), settings,
                 _injectorStatus, _job, _episode is { Closed: false } ? _episode.Clone() : null, _lastEpisode?.Clone(),
-                Volatile.Read(ref _ok), Volatile.Read(ref _errors), _errorKinds.OrderByDescending(p => p.Value).ToArray());
+                Volatile.Read(ref _ok), Volatile.Read(ref _errors), _errorKinds.OrderByDescending(p => p.Value).ToArray(),
+                _settings.Rate > 0 ? $"{_settings.Rate:N0} ops/s open loop" : $"{Workers} worker{(Workers == 1 ? "" : "s")}");
         }
     }
 
