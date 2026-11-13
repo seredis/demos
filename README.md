@@ -18,4 +18,39 @@ needs, and pins the library version it targets, so demos can sit on different re
 | [`setexpiry/`](setexpiry/) | Set-member expiration in Redis 8.12 (`SADDEX`, `SEXPIRE`, `SPTTL`, `SPERSIST`) as a live presence board: per-member TTL countdowns, the reply codes, the `GT`/`MNX` conditions (including `MNX`'s all-or-nothing batch veto), and 8.12's new subkey notification channels, where `__subkeyevent@0__:sexpired` names the member that lapsed. No client API exists yet, so the whole surface runs through the v4 context machinery. Interactive TUI; the 8.12 RC builds from source. | 4.0 alpha |
 | [`vectorsets/`](vectorsets/) | Vector sets in Redis 8.0 via `IDatabase.VectorSet*`: nearest-neighbour image matching over MNIST digits rendered in the terminal — the query and its matches as images, recall measured against exact-f32 ground truth, `NOQUANT`/`Q8`/`BIN` as three copies of one corpus (18.4/7.2/3.9MB), `FILTER` expressions, exact vs HNSW. Interactive TUI. | 3.4.x |
 
+## Running a demo
+
+Each demo's README gives the manual steps (`docker compose up -d --wait`, then `dotnet run`).
+`run.sh` does both in one go, and runs the demo as a native-AOT Release binary:
+
+```bash
+./run.sh                          # list the demos (* marks the ones already compiled)
+./run.sh compacthash              # start its containers, compile if needed, run
+./run.sh hybridcache/tui          # demos that share a folder are named by path
+./run.sh geofailover/tui -- --scripted    # arguments after the name go to the demo
+./run.sh hitless/present          # preset: hitless with its presentation arguments
+./run.sh --all                    # precompile everything (e.g. before presenting); runs nothing
+```
+
+- **Infrastructure**: `docker compose up -d --wait` runs in the demo's folder (or the parent that
+  holds the shared `docker-compose.yml`) before the demo starts; it is silent when the containers
+  are already up. Nothing is torn down afterwards: `docker compose down` in that folder does that.
+  `NO_DOCKER=1` skips the step. The first start of `roaring` and `setexpiry` builds Redis from
+  source, so it is slow.
+- **Compiling**: the first run of a demo prints `First run, precompiling ...` and takes 15-20
+  seconds; later runs start the prebuilt binary from `<demo>/bin/aot/` directly. The binary is
+  rebuilt when the demo's sources or the shared package versions change (by content, so a
+  `git pull` or a branch switch is handled); `REBUILD=1` forces it, which is what a new SDK needs.
+- **`hitless/present`** is `hitless` with `--rate 3000 --timeout 300 --mode Disabled`: open-loop
+  traffic with a tight command timeout, notifications off to start (press `F` for the "before",
+  `N` to switch to Auto, `F` again for the "after"). `RATE` and `TIMEOUT` override the numbers,
+  and any further arguments are passed through with later ones winning. It still needs a Redis
+  Enterprise cluster (see the [hitless README](hitless/)); there is no Docker step.
+- **Native AOT** needs `clang` (or `gcc`) and the zlib headers on top of the SDK. All the demos
+  compile; `hitless` and the two `hybridcache` demos do so with trim/AOT warnings about
+  reflection-based `System.Text.Json`, so treat those three as less proven than the rest under
+  AOT. `dotnet run` is unaffected by any of this and remains the reference way to run a demo.
+
+## Requirements
+
 All demos need the .NET 10 SDK. The caching, geo failover, hybridcache, roaring, extending and set-expiry demos also need Docker with the compose plugin; the hitless demo needs a Redis Enterprise cluster instead (see its README).
