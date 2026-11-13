@@ -32,13 +32,26 @@ Each demo's README gives the manual steps (`docker compose up -d --wait`, then `
 ./run.sh --all                    # precompile everything (e.g. before presenting); runs nothing
 ```
 
+To show the code before running it, `coreusage.sh` and `setup.sh` print a demo's `CoreUsage.cs`
+(the library calls the demo is about) or `Setup.cs` (how the connection is configured), through
+`bat`/`batcat` when installed and `cat` otherwise:
+
+```bash
+./coreusage.sh caching            # then: ./run.sh caching
+./setup.sh caching
+./coreusage.sh                    # list the demos that have a CoreUsage.cs
+./coreusage.sh caching -r 20:60   # further arguments go to bat (here: a line range)
+```
+
+Not every demo has these files; the single-file demos keep everything in `Program.cs`.
+
 - **Infrastructure**: `docker compose up -d --wait` runs in the demo's folder (or the parent that
   holds the shared `docker-compose.yml`) before the demo starts; it is silent when the containers
   are already up. Nothing is torn down afterwards: `docker compose down` in that folder does that.
   `NO_DOCKER=1` skips the step. The first start of `roaring` and `setexpiry` builds Redis from
   source, so it is slow.
 - **Compiling**: the first run of a demo prints `First run, precompiling ...` and takes 15-20
-  seconds; later runs start the prebuilt binary from `<demo>/bin/aot/` directly. The binary is
+  seconds; later runs start the prebuilt binary from `<demo>/bin/Release/aot/` directly. The binary is
   rebuilt when the demo's sources or the shared package versions change (by content, so a
   `git pull` or a branch switch is handled); `REBUILD=1` forces it, which is what a new SDK needs.
 - **`hitless/present`** is `hitless` with `--rate 3000 --timeout 300 --mode Disabled`: open-loop

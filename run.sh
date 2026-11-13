@@ -18,8 +18,10 @@
 # under a second when the containers are already up. Nothing is torn down afterwards; use
 # `docker compose down` in that folder. --all does not touch Docker.
 #
-# Binary: lands in <demo>/bin/aot/ (bin/ is git-ignored), next to a fingerprint of the sources it
+# Binary: lands in <demo>/bin/Release/aot/ (bin/ is git-ignored), next to a fingerprint of the sources it
 # was built from; it is rebuilt when missing or when that fingerprint no longer matches.
+# The folder is deliberately as deep as `dotnet run`'s bin/Release/net10.0/: some demos locate
+# files relative to the binary (vectorsets keeps its MNIST download in ../../../data).
 #
 # PublishAot is passed on the command line rather than set in the csproj, so the demos' ordinary
 # `dotnet run` is untouched. Trim/AOT analysis warnings are printed by the publish: read them, they
@@ -64,7 +66,7 @@ ensure_built() { # <demo folder, absolute or relative to cwd or to the repo root
         echo "$dir: expected exactly one .csproj, found ${#projects[@]}" >&2
         return 2
     fi
-    local project="${projects[0]}" out="$dir/bin/aot"
+    local project="${projects[0]}" out="$dir/bin/Release/aot"
     local name; name="$(basename "$project" .csproj)"
     local stamp="$out/.fingerprint" current reason=""
     exe="$out/$name"
@@ -128,7 +130,7 @@ if [[ $# -lt 1 ]]; then
     list_demos | while IFS= read -r d; do
         mark=' '
         for p in "$root/$d"/*.csproj; do
-            [[ -x "$root/$d/bin/aot/$(basename "$p" .csproj)" ]] && mark='*'
+            [[ -x "$root/$d/bin/Release/aot/$(basename "$p" .csproj)" ]] && mark='*'
         done
         echo "  $mark $d"
         # presets: a second name for a demo, with arguments supplied (see the case statement below)
