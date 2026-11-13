@@ -8,7 +8,8 @@
 #   ./coreusage.sh caching -r 20:60 further arguments go to bat (here: a line range)
 #
 # The demo is named as for run.sh (caching, hybridcache/tui, hitless/present, ...). A folder
-# that only has the file further down (geofailover -> geofailover/tui) resolves if that is unambiguous.
+# that only has the file further down resolves to it, preferring tui/ when there are several
+# (geofailover -> geofailover/tui, hybridcache -> hybridcache/tui).
 set -euo pipefail
 
 root="$(cd "$(dirname "$0")" && pwd)"
@@ -40,6 +41,8 @@ fi
 target="$dir/$file"
 if [[ ! -f "$target" ]]; then
     mapfile -t found < <(candidates "$dir")
+    # several copies (hybridcache/console, hybridcache/tui): prefer the interactive demo's
+    [[ ${#found[@]} -gt 1 && -f "$dir/tui/$file" ]] && found=("${dir#"$root"/}/tui/$file")
     case ${#found[@]} in
         0) echo "$demo has no $file; run $self with no arguments for the demos that do" >&2; exit 1 ;;
         1) target="$root/${found[0]}" ;;

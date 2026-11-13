@@ -12,6 +12,7 @@
 #   REBUILD=1 ./run.sh --all          recompile every demo
 #
 # <demo> is a folder holding exactly one .csproj (so: compacthash, hybridcache/console, ...).
+# A folder that holds several demos means its tui/: `./run.sh geofailover` runs geofailover/tui.
 #
 # Infrastructure: if the demo's folder, or a parent of it inside this repo, has a
 # docker-compose.yml, `docker compose up -d --wait` runs there first. That is a no-op taking well
@@ -62,6 +63,11 @@ ensure_built() { # <demo folder, absolute or relative to cwd or to the repo root
         return 2
     fi
     local projects=("$dir"/*.csproj)
+    # a folder of several demos (geofailover, hybridcache): prefer the interactive one
+    if [[ ${#projects[@]} -eq 0 && -d "$dir/tui" ]]; then
+        dir="$dir/tui"
+        projects=("$dir"/*.csproj)
+    fi
     if [[ ${#projects[@]} -ne 1 ]]; then
         echo "$dir: expected exactly one .csproj, found ${#projects[@]}" >&2
         return 2
@@ -126,7 +132,7 @@ if [[ $# -lt 1 ]]; then
     echo "usage: $0 <demo> [--] [demo args...]"
     echo "       $0 --all        prebuild every demo, run nothing"
     echo
-    echo "demos (* = prebuilt, though possibly stale):"
+    echo "demos (* = prebuilt, though possibly stale; the folder alone means its tui, e.g. geofailover):"
     list_demos | while IFS= read -r d; do
         mark=' '
         for p in "$root/$d"/*.csproj; do

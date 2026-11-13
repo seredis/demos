@@ -27,6 +27,7 @@ Each demo's README gives the manual steps (`docker compose up -d --wait`, then `
 ./run.sh                          # list the demos (* marks the ones already compiled)
 ./run.sh compacthash              # start its containers, compile if needed, run
 ./run.sh hybridcache/tui          # demos that share a folder are named by path
+./run.sh hybridcache              # ...or by the folder alone, which means its tui
 ./run.sh geofailover/tui -- --scripted    # arguments after the name go to the demo
 ./run.sh hitless/present          # preset: hitless with its presentation arguments
 ./run.sh --all                    # precompile everything (e.g. before presenting); runs nothing
