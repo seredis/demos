@@ -13,6 +13,7 @@ question: **when server A changes something, how long does server B keep serving
 | `Setup.cs`, stock mode | `AddHybridCache` + `AddStackExchangeRedisCache`: a `MemoryCache` near cache per server, **no invalidation channel** — a foreign change is seen when the local copy *expires* (passive) |
 | `Setup.cs`, push mode | `AddRedisHybridCache`: the multiplexer's client cache is the near cache, and redis **pushes invalidations** into it (`CLIENT TRACKING`, RESP3) — a foreign change evicts the local copy immediately (active) |
 | `CoreUsage.cs` | the application's cache consumption — identical for both |
+| `Serialization.cs` | the application's own `IHybridCacheSerializer<Product>` (source-generated `System.Text.Json`), registered the same way in both modes — what lets the demo run as native AOT |
 | everything else | demo machinery, also identical for both |
 
 Both modes use the same entry options (`Expiration` 5 min, `LocalCacheExpiration` 10 s); what
@@ -148,10 +149,14 @@ The library-facing code is isolated so it can be shown on its own, e.g. `bat Set
   read-through `GetOrCreateAsync`, write-through `SetAsync`, `RemoveAsync` and
   `RemoveByTagAsync`, against the abstract `HybridCache`. Nothing in it knows which
   implementation is running.
+- [`tui/Serialization.cs`](tui/Serialization.cs) — bring-your-own serialization: an
+  `IHybridCacheSerializer<Product>` over source-generated `System.Text.Json`, picked up from DI
+  by both implementations. The default (reflection-based JSON) works under `dotnet run` but not
+  in a trimmed or native-AOT build; this does, with the same JSON bytes.
 - Everything else is demo scaffolding: `Engine.cs` (sampling, actions, mode switching),
   `Ui.cs` (the Spectre layout), `Program.cs` (the render loop), `Database.cs` (a pretend
   system of record). The console demo carries the same split (`Setup.cs`, `CoreUsage.cs`,
-  with `Scenario.cs` as the script).
+  `Serialization.cs`, with `Scenario.cs` as the script).
 
 Colour is used throughout but never alone: staleness is also carried by the `!` row and written
 out in words with its duration, actions are letters, and the implementation is named in text.

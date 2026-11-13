@@ -47,9 +47,11 @@ Each demo's README gives the manual steps (`docker compose up -d --wait`, then `
   and any further arguments are passed through with later ones winning. It still needs a Redis
   Enterprise cluster (see the [hitless README](hitless/)); there is no Docker step.
 - **Native AOT** needs `clang` (or `gcc`) and the zlib headers on top of the SDK. All the demos
-  compile; `hitless` and the two `hybridcache` demos do so with trim/AOT warnings about
-  reflection-based `System.Text.Json`, so treat those three as less proven than the rest under
-  AOT. `dotnet run` is unaffected by any of this and remains the reference way to run a demo.
+  compile. `hitless` does so with trim/AOT warnings about reflection-based `System.Text.Json`
+  in its fault injector, so treat it as less proven than the rest under AOT. The two
+  `hybridcache` demos also print such warnings, but those are about the libraries' default
+  serializer, which the demos replace with a source-generated one (`Serialization.cs`); both run
+  correctly as native AOT. `dotnet run` is unaffected by any of this and remains the reference way to run a demo.
 
 ## Requirements
 

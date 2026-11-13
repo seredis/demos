@@ -61,6 +61,9 @@ static class Setup
             options.InstanceName = keySpace;
         });
 
+        // the application's own serializer (Serialization.cs); the same registration in both modes
+        services.AddSingleton<IHybridCacheSerializer<Product>, ProductSerializer>();
+
         services.AddHybridCache(options => options.DefaultEntryOptions = EntryOptions);
 
         var provider = services.BuildServiceProvider();
@@ -83,6 +86,9 @@ static class Setup
 
         // a dedicated connection for the cache, keyed by the ecosystem convention
         services.AddKeyedSingleton<IConnectionMultiplexer>(typeof(HybridCache), muxer);
+
+        // the application's own serializer (Serialization.cs); the same registration in both modes
+        services.AddSingleton<IHybridCacheSerializer<Product>, ProductSerializer>();
 
         services.AddRedisHybridCache(options =>
         {
